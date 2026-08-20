@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """
-OmaScan Advanced Threat Intelligence Scanner
-Unified multi-target scanner supporting:
+OmaScan Full Threat Intelligence Engine
+Provides zero-friction, deep on-device and cloud threat analysis for:
 - File Hashes (MD5, SHA-1, SHA-256)
 - IP Addresses (IPv4, IPv6)
-- Domains (FQDN)
-- Full URLs
+- Domains & FQDNs
+- Web URLs
 
-Integrates VirusTotal v3 API and urlscan.io v1 API with zero-friction public fallbacks.
+Extracts:
+1. Threat Feeds & Reputation (urlscan.io, Quad9/DNSBL, VirusTotal v3)
+2. Live Page Title & Sandbox Screenshot (urlscan.io)
+3. SSL / TLS Certificate Details (Issuer, Expiration, Encryption state)
+4. Network & Infrastructure (Server IP, Country, ASN/ISP, Web Server tech, HTTP status)
+5. File / Malware Classifications
 """
 
 import sys
@@ -16,10 +21,12 @@ import re
 import json
 import time
 import socket
+import ssl
 import base64
 import urllib.request
 import urllib.parse
 import urllib.error
+from datetime import datetime, timezone
 from pathlib import Path
 
 HOME = Path.home()
@@ -42,33 +49,84 @@ def save_config(cfg):
 
 def detect_target_type(raw_target):
     t = raw_target.strip()
-    # Check Hashes
     if re.match(r'^[a-fA-F0-9]{64}$', t):
         return "hash_sha256", t.lower(), t.lower()
     elif re.match(r'^[a-fA-F0-9]{40}$', t):
         return "hash_sha1", t.lower(), t.lower()
     elif re.match(r'^[a-fA-F0-9]{32}$', t):
         return "hash_md5", t.lower(), t.lower()
-
-    # Check IPv4
-    if re.match(r'^(\d{1,3}\.){3}\d{1,3}$', t):
+    elif re.match(r'^(\d{1,3}\.){3}\d{1,3}$', t):
         return "ip", t, t
-
-    # Check IPv6
-    if ":" in t and not t.startswith("http") and re.match(r'^[0-9a-fA-F:]+$', t):
+    elif ":" in t and not t.startswith("http") and re.match(r'^[0-9a-fA-F:]+$', t):
         return "ip", t, t
-
-    # Check Full URL
-    if t.startswith("http://") or t.startswith("https://") or "/" in t:
+    elif t.startswith("http://") or t.startswith("https://") or "/" in t:
         if not t.startswith("http://") and not t.startswith("https://"):
             t = "https://" + t
         parsed = urllib.parse.urlparse(t)
         domain = parsed.netloc.split(":")[0].lower()
         return "url", t, domain
+    else:
+        domain = t.split("/")[0].split(":")[0].lower()
+        return "domain", domain, domain
 
-    # Fallback to Domain
-    domain = t.split("/")[0].split(":")[0].lower()
-    return "domain", domain, domain
+def probe_ssl(domain):
+    ssl_info = {
+        "hasSsl": False,
+        "issuer": None,
+        "expires": None,
+        "daysRemaining": None
+    }
+    try:
+        ctx = ssl.create_default_context()
+        with ctx.wrap_socket(socket.socket(), server_hostname=domain) as s:
+            s.settimeout(3.0)
+            s.connect((domain, 443))
+            cert = s.getpeercert()
+            if cert:
+                ssl_info["hasSsl"] = True
+                issuer_dict = dict(x[0] for x in cert.get('issuer', []))
+                ssl_info["issuer"] = issuer_dict.get('organizationName') or issuer_dict.get('commonName') or "Valid TLS Certificate"
+                not_after = cert.get('notAfter')
+                if not_after:
+                    ssl_info["expires"] = not_after
+                    try:
+                        expire_dt = datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z")
+                        days_left = (expire_dt - datetime.now(timezone.utc)).days
+                        ssl_info["daysRemaining"] = days_left
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return ssl_info
+
+def probe_http(domain, full_url=None):
+    http_info = {
+        "status": None,
+        "server": None,
+        "hsts": False,
+        "redirectTarget": None
+    }
+    target_url = full_url if full_url and full_url.startswith("http") else f"https://{domain}"
+    try:
+        req = urllib.request.Request(target_url, headers={
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; OmaScan/2.0) AppleWebKit/537.36"
+        })
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        with urllib.request.urlopen(req, timeout=3.5, context=ctx) as resp:
+            http_info["status"] = f"{resp.status} {resp.reason}"
+            headers = dict(resp.headers)
+            http_info["server"] = headers.get("server") or headers.get("Server")
+            http_info["hsts"] = bool(headers.get("strict-transport-security") or headers.get("Strict-Transport-Security"))
+            if resp.url != target_url:
+                http_info["redirectTarget"] = resp.url
+    except urllib.error.HTTPError as e:
+        http_info["status"] = f"{e.code} {e.reason}"
+        http_info["server"] = e.headers.get("server")
+    except Exception:
+        pass
+    return http_info
 
 def query_urlscan(target_type, target, domain):
     result = {
@@ -138,7 +196,6 @@ def query_virustotal(target_type, target, domain, api_key=None):
         "resultUrl": None
     }
 
-    # Set web link regardless of key
     if target_type.startswith("hash"):
         vt_result["resultUrl"] = f"https://www.virustotal.com/gui/file/{target}"
     elif target_type == "ip":
@@ -178,12 +235,10 @@ def query_virustotal(target_type, target, domain, api_key=None):
             vt_result["totalEngines"] = sum(stats.values())
             vt_result["reputation"] = attrs.get("reputation", 0)
 
-            # Threat classification
             threat_class = attrs.get("popular_threat_classification", {})
             if threat_class.get("suggested_threat_label"):
                 vt_result["threatLabel"] = threat_class["suggested_threat_label"]
 
-            # File specifics if hash
             if target_type.startswith("hash"):
                 vt_result["fileDetails"] = {
                     "name": attrs.get("meaningful_name") or (attrs.get("names", ["Unknown"])[0] if attrs.get("names") else "Unknown"),
@@ -191,7 +246,6 @@ def query_virustotal(target_type, target, domain, api_key=None):
                     "type": attrs.get("type_description", "Binary / File")
                 }
 
-            # Flagged security vendor list
             analysis_results = attrs.get("last_analysis_results", {})
             for vendor, val in sorted(analysis_results.items()):
                 cat = val.get("category")
@@ -206,7 +260,7 @@ def query_virustotal(target_type, target, domain, api_key=None):
 
     return vt_result
 
-def resolve_dns(domain):
+def resolve_dns_ips(domain):
     ips = []
     try:
         _, _, ip_list = socket.gethostbyname_ex(domain)
@@ -214,15 +268,6 @@ def resolve_dns(domain):
     except Exception:
         pass
     return ips
-
-def format_file_size(bytes_num):
-    if not bytes_num:
-        return "0 B"
-    for unit in ['B', 'KB', 'MB', 'GB']:
-        if bytes_num < 1024.0:
-            return f"{bytes_num:.1f} {unit}"
-        bytes_num /= 1024.0
-    return f"{bytes_num:.1f} TB"
 
 def main():
     if len(sys.argv) < 2:
@@ -253,12 +298,16 @@ def main():
     vt_key = cfg.get("vt_api_key")
     urlscan_key = cfg.get("urlscan_api_key")
 
-    # Run lookups
+    # Multi-engine lookups
     urlscan_data = query_urlscan(target_type, target, domain)
     vt_data = query_virustotal(target_type, target, domain, vt_key)
-    dns_ips = resolve_dns(domain) if target_type in ["domain", "url"] else ([target] if target_type == "ip" else [])
+    dns_ips = resolve_dns_ips(domain) if target_type in ["domain", "url"] else ([target] if target_type == "ip" else [])
+    
+    # Probes for domains/URLs
+    ssl_data = probe_ssl(domain) if target_type in ["domain", "url"] else None
+    http_data = probe_http(domain, target if target_type == "url" else None) if target_type in ["domain", "url"] else None
 
-    # Compute verdict
+    # Determine unified verdict
     is_malicious = False
     is_suspicious = False
     verdict = "CLEAN"
@@ -279,7 +328,6 @@ def main():
 
     now_str = time.strftime("%H:%M:%S")
 
-    # Friendly type name
     type_labels = {
         "hash_sha256": "File Hash (SHA-256)",
         "hash_sha1": "File Hash (SHA-1)",
@@ -289,7 +337,6 @@ def main():
         "url": "Web URL"
     }
 
-    # Save to history
     history_entry = {
         "target": target,
         "targetType": type_labels.get(target_type, "Target"),
@@ -312,6 +359,8 @@ def main():
         "verdictColor": verdict_color,
         "verdictText": verdict_text,
         "dnsIps": dns_ips,
+        "ssl": ssl_data,
+        "http": http_data,
         "vt": vt_data,
         "urlscan": urlscan_data,
         "timestamp": now_str,

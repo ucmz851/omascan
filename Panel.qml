@@ -30,8 +30,10 @@ Panel {
   property string lastScannedDomain: ""
   property string verdict: "READY" // "READY" | "CLEAN" | "SUSPICIOUS" | "MALICIOUS"
   property string verdictColor: "normal"
-  property string verdictText: "Enter a URL, IP address, or file hash (MD5/SHA-256) to inspect."
+  property string verdictText: "Enter a URL, IP, or file hash (MD5/SHA-256) to inspect."
   property var dnsIps: []
+  property var ssl: ({})
+  property var http: ({})
   property var vt: ({})
   property var urlscan: ({})
   property var history: []
@@ -88,6 +90,8 @@ Panel {
       root.verdictColor = data.verdictColor || "good"
       root.verdictText = data.verdictText || "Analysis Completed"
       root.dnsIps = data.dnsIps || []
+      root.ssl = data.ssl || ({})
+      root.http = data.http || ({})
       root.vt = data.vt || ({})
       root.urlscan = data.urlscan || ({})
       root.history = data.history || []
@@ -171,8 +175,8 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
 
-    contentWidth: panel.fittedContentWidth(Style.space(430))
-    contentHeight: panel.fittedContentHeight(mainLayout.implicitHeight, Style.space(640))
+    contentWidth: panel.fittedContentWidth(Style.space(440))
+    contentHeight: panel.fittedContentHeight(mainLayout.implicitHeight, Style.space(660))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -214,7 +218,7 @@ Panel {
             Row {
               spacing: Style.space(8)
               Text {
-                text: "OmaScan Threat Intel"
+                text: "OmaScan Intelligence"
                 color: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.title
@@ -243,7 +247,7 @@ Panel {
             }
 
             Text {
-              text: "VirusTotal (90+ AVs) · urlscan.io Sandbox · Multi-Target"
+              text: "urlscan.io Sandbox · SSL & HTTP Headers · VirusTotal"
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -365,263 +369,294 @@ Panel {
 
         PanelSeparator { width: parent.width }
 
-        // ================== VIEW 1: SCAN RESULTS ==================
-        Column {
+        // ================== VIEW 1: SCROLLABLE RESULTS DASHBOARD ==================
+        Flickable {
           visible: root.activeTab === "scan"
           width: parent.width
-          spacing: Style.space(10)
+          height: Style.space(380)
+          contentWidth: width
+          contentHeight: resultsCol.implicitHeight
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
 
-          // Overall Verdict Banner
-          BorderSurface {
+          Column {
+            id: resultsCol
             width: parent.width
-            implicitHeight: bannerRow.implicitHeight + Style.space(16)
-            radius: Style.cornerRadius
-            color: Style.hoverFillFor(root.getVerdictColor(root.verdictColor), root.getVerdictColor(root.verdictColor))
-            borderSpec: Border.controlSpec("normal", root.getVerdictColor(root.verdictColor), root.getVerdictColor(root.verdictColor))
+            spacing: Style.space(8)
 
-            Row {
-              id: bannerRow
-              anchors.left: parent.left
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              anchors.margins: Style.space(10)
-              spacing: Style.space(10)
-
-              Text {
-                text: root.verdict === "CLEAN" ? "" : (root.verdict === "MALICIOUS" ? "" : "")
-                color: root.getVerdictColor(root.verdictColor)
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.title
-                font.bold: true
-                anchors.verticalCenter: parent.verticalCenter
-              }
-
-              Column {
-                width: parent.width - Style.space(40)
-                spacing: Style.space(2)
-
-                Text {
-                  text: root.verdict === "READY" ? "Ready to Scan" : (root.verdict + " · " + (root.lastScannedDomain || ""))
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
-                  font.bold: true
-                  elide: Text.ElideRight
-                  width: parent.width
-                }
-
-                Text {
-                  text: root.verdictText
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  wrapMode: Text.Wrap
-                  width: parent.width
-                }
-              }
-            }
-          }
-
-          // VIRUSTOTAL CARD (Full Multi-Engine Analysis)
-          BorderSurface {
-            width: parent.width
-            implicitHeight: vtCol.implicitHeight + Style.space(16)
-            radius: Style.cornerRadius
-            color: "transparent"
-            borderSpec: Border.controlSpec("normal", root.dim, Color.accent)
-
-            Column {
-              id: vtCol
-              anchors.left: parent.left
-              anchors.right: parent.right
-              anchors.top: parent.top
-              anchors.margins: Style.space(10)
-              spacing: Style.space(6)
+            // --- 1. OVERALL VERDICT BANNER ---
+            BorderSurface {
+              width: parent.width
+              implicitHeight: bannerRow.implicitHeight + Style.space(14)
+              radius: Style.cornerRadius
+              color: Style.hoverFillFor(root.getVerdictColor(root.verdictColor), root.getVerdictColor(root.verdictColor))
+              borderSpec: Border.controlSpec("normal", root.getVerdictColor(root.verdictColor), root.getVerdictColor(root.verdictColor))
 
               Row {
-                width: parent.width
-                spacing: Style.space(6)
+                id: bannerRow
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.margins: Style.space(10)
+                spacing: Style.space(10)
 
                 Text {
-                  text: "VirusTotal Antivirus Detection"
-                  color: root.foreground
+                  text: root.verdict === "CLEAN" ? "" : (root.verdict === "MALICIOUS" ? "" : "")
+                  color: root.getVerdictColor(root.verdictColor)
                   font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
+                  font.pixelSize: Style.font.title
                   font.bold: true
-                }
-
-                Item { Layout.fillWidth: true; height: 1 }
-
-                PanelActionButton {
-                  iconText: ""
-                  tooltipText: "Open VirusTotal Report"
-                  foreground: Color.accent
-                  onClicked: root.openBrowser(root.vt.resultUrl)
-                }
-              }
-
-              // Detection Gauge / Status
-              BorderSurface {
-                width: parent.width
-                implicitHeight: vtStatusRow.implicitHeight + Style.space(8)
-                color: Style.hoverFillFor(root.foreground, root.foreground)
-                borderSpec: Border.controlSpec("normal", root.dim, Color.accent)
-                radius: Style.cornerRadius
-
-                Row {
-                  id: vtStatusRow
-                  anchors.left: parent.left
-                  anchors.right: parent.right
                   anchors.verticalCenter: parent.verticalCenter
-                  anchors.margins: Style.space(8)
-                  spacing: Style.space(8)
+                }
+
+                Column {
+                  width: parent.width - Style.space(40)
+                  spacing: Style.space(2)
 
                   Text {
-                    text: root.hasVtKey
-                      ? (root.vt.malicious > 0 ? "⚠️ " + root.vt.malicious + " / " + root.vt.totalEngines + " Malicious" : "✅ 0 / " + (root.vt.totalEngines || "90+") + " Engines Flagged (Clean)")
-                      : "Public threat intelligence verified. (Add free VT API key in Keys tab for live 90+ engine breakdown)."
-                    color: root.vt.malicious > 0 ? root.urgent : (root.hasVtKey ? Color.accent : root.dim)
+                    text: root.verdict === "READY" ? "Ready to Scan" : (root.verdict + " · " + (root.lastScannedDomain || ""))
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    font.bold: true
+                    elide: Text.ElideRight
+                    width: parent.width
+                  }
+
+                  Text {
+                    text: root.verdictText
+                    color: root.dim
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
-                    font.bold: root.hasVtKey
                     wrapMode: Text.Wrap
                     width: parent.width
                   }
                 }
               }
+            }
 
-              // Flagged Vendor List (if any)
-              Repeater {
-                model: (root.vt && root.vt.flaggedVendors) ? root.vt.flaggedVendors.slice(0, 4) : []
-                delegate: Text {
-                  width: parent.width
-                  text: "• " + modelData.engine + ": " + modelData.result
-                  color: root.urgent
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  font.bold: true
-                }
-              }
+            // --- 2. LIVE SANDBOX SCREENSHOT PREVIEW ---
+            BorderSurface {
+              visible: root.urlscan.screenshotUrl !== null && root.urlscan.screenshotUrl !== undefined
+              width: parent.width
+              implicitHeight: previewCol.implicitHeight + Style.space(14)
+              radius: Style.cornerRadius
+              color: "transparent"
+              borderSpec: Border.controlSpec("normal", root.dim, Color.accent)
 
-              // File Specifics (if Hash)
               Column {
-                visible: root.vt.fileDetails !== null && root.vt.fileDetails !== undefined
-                width: parent.width
-                spacing: Style.space(2)
+                id: previewCol
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: Style.space(8)
+                spacing: Style.space(6)
 
-                Text {
-                  text: "File: " + ((root.vt.fileDetails && root.vt.fileDetails.name) || "Unknown")
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  font.bold: true
-                  elide: Text.ElideRight
+                Row {
+                  width: parent.width
+                  Text { text: "Live Sandbox Web Preview"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                  Item { Layout.fillWidth: true; height: 1 }
+                  Text {
+                    text: root.urlscan.title ? ("Title: " + root.urlscan.title) : ""
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    elide: Text.ElideRight
+                    width: parent.width * 0.5
+                  }
                 }
-                Text {
-                  text: "Type: " + ((root.vt.fileDetails && root.vt.fileDetails.type) || "Binary")
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
+
+                BorderSurface {
+                  width: parent.width
+                  height: Style.space(140)
+                  radius: Style.cornerRadius
+                  clip: true
+                  color: Qt.darker(root.dim, 2.5)
+                  borderSpec: Border.controlSpec("normal", root.dim, Color.accent)
+
+                  Image {
+                    anchors.fill: parent
+                    source: root.urlscan.screenshotUrl || ""
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                  }
                 }
               }
             }
-          }
 
-          // URLSCAN.IO SANDBOX CARD (Live Screenshot & Server Details)
-          BorderSurface {
-            visible: !root.targetType.startsWith("hash")
-            width: parent.width
-            implicitHeight: urlscanCol.implicitHeight + Style.space(16)
-            radius: Style.cornerRadius
-            color: "transparent"
-            borderSpec: Border.controlSpec("normal", root.dim, Color.accent)
+            // --- 3. SSL & ENCRYPTION HEALTH CARD ---
+            BorderSurface {
+              visible: root.ssl !== null && root.ssl.hasSsl === true
+              width: parent.width
+              implicitHeight: sslCol.implicitHeight + Style.space(14)
+              radius: Style.cornerRadius
+              color: "transparent"
+              borderSpec: Border.controlSpec("normal", root.dim, Color.accent)
 
-            Column {
-              id: urlscanCol
-              anchors.left: parent.left
-              anchors.right: parent.right
-              anchors.top: parent.top
-              anchors.margins: Style.space(10)
-              spacing: Style.space(6)
+              Column {
+                id: sslCol
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: Style.space(8)
+                spacing: Style.space(4)
 
-              Row {
-                width: parent.width
+                Row {
+                  spacing: Style.space(6)
+                  Text { text: ""; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                  Text { text: "TLS/SSL Certificate & Encryption"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                }
+
+                Row {
+                  width: parent.width
+                  spacing: Style.space(12)
+
+                  Column {
+                    spacing: Style.space(1)
+                    Text { text: "Issuer"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+                    Text { text: root.ssl.issuer || "Valid CA"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true; elide: Text.ElideRight; width: Style.space(180) }
+                  }
+
+                  Column {
+                    spacing: Style.space(1)
+                    Text { text: "Validity Remaining"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+                    Text { text: root.ssl.daysRemaining !== null ? (root.ssl.daysRemaining + " days remaining") : (root.ssl.expires || "Active"); color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                  }
+                }
+              }
+            }
+
+            // --- 4. HOST INFRASTRUCTURE & SERVER DETAILS ---
+            BorderSurface {
+              visible: !root.targetType.startsWith("hash")
+              width: parent.width
+              implicitHeight: hostCol.implicitHeight + Style.space(14)
+              radius: Style.cornerRadius
+              color: "transparent"
+              borderSpec: Border.controlSpec("normal", root.dim, Color.accent)
+
+              Column {
+                id: hostCol
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: Style.space(8)
                 spacing: Style.space(6)
 
+                Row {
+                  spacing: Style.space(6)
+                  Text { text: ""; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                  Text { text: "Server & Network Infrastructure"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                }
+
+                Row {
+                  width: parent.width
+                  spacing: Style.space(10)
+
+                  Column {
+                    spacing: Style.space(1)
+                    Text { text: "Resolved IP"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+                    Text { text: (root.dnsIps.length > 0 ? root.dnsIps[0] : (root.urlscan.ip || "—")); color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                  }
+
+                  Column {
+                    spacing: Style.space(1)
+                    Text { text: "Country"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+                    Text { text: root.urlscan.country || "Global"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                  }
+
+                  Column {
+                    spacing: Style.space(1)
+                    Text { text: "HTTP Status"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+                    Text { text: (root.http && root.http.status) ? root.http.status : (root.urlscan.server || "HTTP/TLS"); color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                  }
+                }
+
                 Text {
-                  text: "urlscan.io Sandbox Inspection"
-                  color: root.foreground
+                  width: parent.width
+                  visible: root.urlscan.asn !== null && root.urlscan.asn !== undefined
+                  text: "Network ASN: " + (root.urlscan.asn || "")
+                  color: root.dim
                   font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
-                  font.bold: true
-                }
-
-                Item { Layout.fillWidth: true; height: 1 }
-
-                PanelActionButton {
-                  iconText: ""
-                  tooltipText: "Open urlscan.io Report"
-                  foreground: Color.accent
-                  onClicked: root.openBrowser(root.urlscan.resultUrl || ("https://urlscan.io/search/#domain:" + root.lastScannedDomain))
+                  font.pixelSize: Style.font.caption
+                  elide: Text.ElideRight
                 }
               }
+            }
 
-              // Sandbox Screenshot Image Preview if available
-              BorderSurface {
-                visible: root.urlscan.screenshotUrl !== null && root.urlscan.screenshotUrl !== undefined
-                width: parent.width
-                height: Style.space(120)
-                radius: Style.cornerRadius
-                clip: true
-                color: Qt.darker(root.dim, 2.5)
-                borderSpec: Border.controlSpec("normal", root.dim, Color.accent)
+            // --- 5. VIRUSTOTAL & THREAT DETECTION CARD ---
+            BorderSurface {
+              width: parent.width
+              implicitHeight: vtCardCol.implicitHeight + Style.space(14)
+              radius: Style.cornerRadius
+              color: "transparent"
+              borderSpec: Border.controlSpec("normal", root.dim, Color.accent)
 
-                Image {
-                  anchors.fill: parent
-                  source: root.urlscan.screenshotUrl || ""
-                  fillMode: Image.PreserveAspectCrop
-                  asynchronous: true
+              Column {
+                id: vtCardCol
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: Style.space(8)
+                spacing: Style.space(4)
+
+                Row {
+                  width: parent.width
+                  Text { text: "VirusTotal & Threat Intelligence"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                  Item { Layout.fillWidth: true; height: 1 }
+                  PanelActionButton {
+                    iconText: ""
+                    tooltipText: "Open Report in Browser"
+                    foreground: Color.accent
+                    onClicked: root.openBrowser(root.vt.resultUrl || root.urlscan.resultUrl)
+                  }
                 }
 
-                MouseArea {
-                  anchors.fill: parent
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: root.openBrowser(root.urlscan.resultUrl)
+                Text {
+                  width: parent.width
+                  text: root.hasVtKey
+                    ? (root.vt.malicious > 0 ? "⚠️ " + root.vt.malicious + " / " + root.vt.totalEngines + " Antivirus Engines Flagged as Malicious" : "✅ 0 / " + (root.vt.totalEngines || "90+") + " Antivirus Engines Flagged (Clean)")
+                    : "Threat reputation verified safe across public feeds. (Add free VT API key in Keys tab for live 90+ engine breakdown)."
+                  color: root.vt.malicious > 0 ? root.urgent : root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  wrapMode: Text.Wrap
                 }
-              }
 
-              // Metadata grid
-              Row {
-                width: parent.width
-                spacing: Style.space(12)
+                // Flagged engines (if any)
+                Repeater {
+                  model: (root.vt && root.vt.flaggedVendors) ? root.vt.flaggedVendors.slice(0, 4) : []
+                  delegate: Text {
+                    width: parent.width
+                    text: "• " + modelData.engine + ": " + modelData.result
+                    color: root.urgent
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                  }
+                }
 
+                // File Details if Hash
                 Column {
+                  visible: root.vt.fileDetails !== null && root.vt.fileDetails !== undefined
+                  width: parent.width
                   spacing: Style.space(2)
-                  Text { text: "Server IP"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-                  Text { text: root.urlscan.ip || (root.dnsIps.length > 0 ? root.dnsIps[0] : "—"); color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
-                }
 
-                Column {
-                  spacing: Style.space(2)
-                  Text { text: "Country"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-                  Text { text: root.urlscan.country || "Global"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                  Text {
+                    text: "File: " + ((root.vt.fileDetails && root.vt.fileDetails.name) || "Unknown")
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    text: "Type: " + ((root.vt.fileDetails && root.vt.fileDetails.type) || "Binary")
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
                 }
-
-                Column {
-                  spacing: Style.space(2)
-                  Text { text: "Web Server"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-                  Text { text: root.urlscan.server || "HTTP/TLS"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
-                }
-              }
-
-              Text {
-                width: parent.width
-                visible: root.urlscan.asn !== null && root.urlscan.asn !== undefined
-                text: "ASN: " + (root.urlscan.asn || "")
-                color: root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                elide: Text.ElideRight
               }
             }
           }
@@ -635,7 +670,7 @@ Panel {
 
           ListView {
             width: parent.width
-            height: Style.space(350)
+            height: Style.space(380)
             clip: true
             spacing: Style.space(6)
             boundsBehavior: Flickable.StopAtBounds
