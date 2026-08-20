@@ -64,6 +64,26 @@ Panel {
     scanProc.running = true
   }
 
+
+  function clearScan() {
+    root.inputUrl = ""
+    root.target = ""
+    root.targetType = ""
+    root.targetTypeLabel = ""
+    root.lastScannedDomain = ""
+    root.verdict = "READY"
+    root.verdictColor = "normal"
+    root.verdictText = "Enter a URL, IP, or file hash (MD5/SHA-256) to inspect."
+    root.dnsIps = []
+    root.ssl = ({})
+    root.http = ({})
+    root.vt = ({})
+    root.urlscan = ({})
+    if (urlInputField) {
+      urlInputField.text = ""
+      urlInputField.forceActiveFocus()
+    }
+  }
   function scanClipboard() {
     pasteProc.running = true
   }
@@ -299,6 +319,14 @@ Panel {
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
               spacing: Style.space(4)
+
+              PanelActionButton {
+                visible: root.inputUrl !== "" || root.verdict !== "READY"
+                iconText: ""
+                tooltipText: "Clear Input & Results"
+                foreground: root.dim
+                onClicked: root.clearScan()
+              }
 
               PanelActionButton {
                 iconText: ""
