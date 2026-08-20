@@ -24,11 +24,13 @@ Panel {
 
   // Scan state
   property string inputUrl: ""
+  property string target: ""
+  property string targetType: ""
+  property string targetTypeLabel: ""
   property string lastScannedDomain: ""
-  property string targetUrl: ""
   property string verdict: "READY" // "READY" | "CLEAN" | "SUSPICIOUS" | "MALICIOUS"
   property string verdictColor: "normal"
-  property string verdictText: "Enter a URL or paste from clipboard to analyze."
+  property string verdictText: "Enter a URL, IP address, or file hash (MD5/SHA-256) to inspect."
   property var dnsIps: []
   property var vt: ({})
   property var urlscan: ({})
@@ -50,13 +52,13 @@ Panel {
     return dim
   }
 
-  function startScan(urlToScan) {
-    var target = (urlToScan || inputUrl || "").trim()
-    if (!target) return
-    inputUrl = target
+  function startScan(targetToScan) {
+    var targetStr = (targetToScan || inputUrl || "").trim()
+    if (!targetStr) return
+    inputUrl = targetStr
     isScanning = true
     activeTab = "scan"
-    scanProc.command = ["python3", Quickshell.env("HOME") + "/.config/omarchy/plugins/ucmz851.omascan/scripts/scanner.py", target]
+    scanProc.command = ["python3", Quickshell.env("HOME") + "/.config/omarchy/plugins/ucmz851.omascan/scripts/scanner.py", targetStr]
     scanProc.running = true
   }
 
@@ -78,8 +80,10 @@ Panel {
     if (!text || text.trim() === "") return
     try {
       var data = JSON.parse(text)
-      root.targetUrl = data.targetUrl || ""
-      root.lastScannedDomain = data.domain || ""
+      root.target = data.target || ""
+      root.targetType = data.targetType || ""
+      root.targetTypeLabel = data.targetTypeLabel || "Target"
+      root.lastScannedDomain = data.domain || data.target || ""
       root.verdict = data.verdict || "CLEAN"
       root.verdictColor = data.verdictColor || "good"
       root.verdictText = data.verdictText || "Analysis Completed"
@@ -168,7 +172,7 @@ Panel {
     focusTarget: keyCatcher
 
     contentWidth: panel.fittedContentWidth(Style.space(430))
-    contentHeight: panel.fittedContentHeight(mainLayout.implicitHeight, Style.space(620))
+    contentHeight: panel.fittedContentHeight(mainLayout.implicitHeight, Style.space(640))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -184,7 +188,7 @@ Panel {
         anchors.top: parent.top
         spacing: Style.space(10)
 
-        // ------------------ HERO TITLE ------------------
+        // ------------------ HERO HEADER ------------------
         Item {
           width: parent.width
           implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight)
@@ -207,16 +211,39 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(2)
 
-            Text {
-              text: "OmaScan URL Threat Scanner"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.title
-              font.bold: true
+            Row {
+              spacing: Style.space(8)
+              Text {
+                text: "OmaScan Threat Intel"
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.title
+                font.bold: true
+              }
+
+              BorderSurface {
+                visible: root.targetTypeLabel !== ""
+                implicitWidth: typeText.implicitWidth + Style.space(8)
+                implicitHeight: typeText.implicitHeight + Style.space(3)
+                anchors.verticalCenter: parent.verticalCenter
+                color: "transparent"
+                borderSpec: Border.controlSpec("normal", Color.accent, Color.accent)
+                radius: Style.cornerRadius
+
+                Text {
+                  id: typeText
+                  anchors.centerIn: parent
+                  text: root.targetTypeLabel
+                  color: Color.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+              }
             }
 
             Text {
-              text: "Powered by urlscan.io & VirusTotal"
+              text: "VirusTotal (90+ AVs) · urlscan.io Sandbox · Multi-Target"
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -251,7 +278,7 @@ Panel {
               clip: true
 
               Text {
-                text: "Enter URL or domain to scan..."
+                text: "Paste URL, IP, or Hash (MD5/SHA-256)..."
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.body
@@ -279,7 +306,7 @@ Panel {
               PanelActionButton {
                 id: scanActionBtn
                 iconText: ""
-                tooltipText: root.isScanning ? "Scanning URL..." : "Scan URL"
+                tooltipText: root.isScanning ? "Scanning Target..." : "Scan Target"
                 foreground: root.isScanning ? Color.accent : root.foreground
                 rotation: 0
                 onClicked: root.startScan(urlInputField.text)
@@ -395,8 +422,114 @@ Panel {
             }
           }
 
-          // urlscan.io Sandbox Card
+          // VIRUSTOTAL CARD (Full Multi-Engine Analysis)
           BorderSurface {
+            width: parent.width
+            implicitHeight: vtCol.implicitHeight + Style.space(16)
+            radius: Style.cornerRadius
+            color: "transparent"
+            borderSpec: Border.controlSpec("normal", root.dim, Color.accent)
+
+            Column {
+              id: vtCol
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.top: parent.top
+              anchors.margins: Style.space(10)
+              spacing: Style.space(6)
+
+              Row {
+                width: parent.width
+                spacing: Style.space(6)
+
+                Text {
+                  text: "VirusTotal Antivirus Detection"
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  font.bold: true
+                }
+
+                Item { Layout.fillWidth: true; height: 1 }
+
+                PanelActionButton {
+                  iconText: ""
+                  tooltipText: "Open VirusTotal Report"
+                  foreground: Color.accent
+                  onClicked: root.openBrowser(root.vt.resultUrl)
+                }
+              }
+
+              // Detection Gauge / Status
+              BorderSurface {
+                width: parent.width
+                implicitHeight: vtStatusRow.implicitHeight + Style.space(8)
+                color: Style.hoverFillFor(root.foreground, root.foreground)
+                borderSpec: Border.controlSpec("normal", root.dim, Color.accent)
+                radius: Style.cornerRadius
+
+                Row {
+                  id: vtStatusRow
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  anchors.margins: Style.space(8)
+                  spacing: Style.space(8)
+
+                  Text {
+                    text: root.hasVtKey
+                      ? (root.vt.malicious > 0 ? "⚠️ " + root.vt.malicious + " / " + root.vt.totalEngines + " Malicious" : "✅ 0 / " + (root.vt.totalEngines || "90+") + " Engines Flagged (Clean)")
+                      : "Public threat intelligence verified. (Add free VT API key in Keys tab for live 90+ engine breakdown)."
+                    color: root.vt.malicious > 0 ? root.urgent : (root.hasVtKey ? Color.accent : root.dim)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: root.hasVtKey
+                    wrapMode: Text.Wrap
+                    width: parent.width
+                  }
+                }
+              }
+
+              // Flagged Vendor List (if any)
+              Repeater {
+                model: (root.vt && root.vt.flaggedVendors) ? root.vt.flaggedVendors.slice(0, 4) : []
+                delegate: Text {
+                  width: parent.width
+                  text: "• " + modelData.engine + ": " + modelData.result
+                  color: root.urgent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+              }
+
+              // File Specifics (if Hash)
+              Column {
+                visible: root.vt.fileDetails !== null && root.vt.fileDetails !== undefined
+                width: parent.width
+                spacing: Style.space(2)
+
+                Text {
+                  text: "File: " + ((root.vt.fileDetails && root.vt.fileDetails.name) || "Unknown")
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                  elide: Text.ElideRight
+                }
+                Text {
+                  text: "Type: " + ((root.vt.fileDetails && root.vt.fileDetails.type) || "Binary")
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+            }
+          }
+
+          // URLSCAN.IO SANDBOX CARD (Live Screenshot & Server Details)
+          BorderSurface {
+            visible: !root.targetType.startsWith("hash")
             width: parent.width
             implicitHeight: urlscanCol.implicitHeight + Style.space(16)
             radius: Style.cornerRadius
@@ -492,57 +625,6 @@ Panel {
               }
             }
           }
-
-          // VirusTotal Multi-Engine Card
-          BorderSurface {
-            width: parent.width
-            implicitHeight: vtCol.implicitHeight + Style.space(16)
-            radius: Style.cornerRadius
-            color: "transparent"
-            borderSpec: Border.controlSpec("normal", root.dim, Color.accent)
-
-            Column {
-              id: vtCol
-              anchors.left: parent.left
-              anchors.right: parent.right
-              anchors.top: parent.top
-              anchors.margins: Style.space(10)
-              spacing: Style.space(6)
-
-              Row {
-                width: parent.width
-                spacing: Style.space(6)
-
-                Text {
-                  text: "VirusTotal Multi-Engine Antivirus"
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
-                  font.bold: true
-                }
-
-                Item { Layout.fillWidth: true; height: 1 }
-
-                PanelActionButton {
-                  iconText: ""
-                  tooltipText: "Open VirusTotal"
-                  foreground: Color.accent
-                  onClicked: root.openBrowser("https://www.virustotal.com/gui/domain/" + (root.lastScannedDomain || ""))
-                }
-              }
-
-              Text {
-                width: parent.width
-                text: root.hasVtKey
-                  ? (root.vt.malicious > 0 ? "⚠️ Flagged by " + root.vt.malicious + " / " + root.vt.totalEngines + " Security Vendors" : "✅ 0 / " + (root.vt.totalEngines || "90+") + " Security Vendors Flagged")
-                  : "Quick threat verification passed. (Add your free VirusTotal API key in the Keys tab for real-time 90+ engine reports)."
-                color: root.vt.malicious > 0 ? root.urgent : root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                wrapMode: Text.Wrap
-              }
-            }
-          }
         }
 
         // ================== VIEW 2: HISTORY ==================
@@ -553,7 +635,7 @@ Panel {
 
           ListView {
             width: parent.width
-            height: Style.space(340)
+            height: Style.space(350)
             clip: true
             spacing: Style.space(6)
             boundsBehavior: Flickable.StopAtBounds
@@ -588,7 +670,7 @@ Panel {
                   spacing: Style.space(2)
 
                   Text {
-                    text: modelData.domain || ""
+                    text: modelData.target || ""
                     color: root.foreground
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.body
@@ -598,7 +680,7 @@ Panel {
                   }
 
                   Text {
-                    text: (modelData.verdict || "CLEAN") + " · " + (modelData.time || "")
+                    text: (modelData.targetType || "Target") + " · " + (modelData.verdict || "CLEAN") + " · " + (modelData.time || "")
                     color: root.dim
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
@@ -609,7 +691,7 @@ Panel {
                   iconText: ""
                   tooltipText: "Rescan"
                   foreground: Color.accent
-                  onClicked: root.startScan(modelData.url || modelData.domain)
+                  onClicked: root.startScan(modelData.target)
                   anchors.verticalCenter: parent.verticalCenter
                 }
               }
@@ -617,15 +699,15 @@ Panel {
           }
         }
 
-        // ================== VIEW 3: API KEYS ==================
+        // ================== VIEW 3: API KEYS & GUIDE ==================
         Column {
           visible: root.activeTab === "keys"
           width: parent.width
-          spacing: Style.space(10)
+          spacing: Style.space(8)
 
           Text {
             width: parent.width
-            text: "Optional API Keys for real-time live sandbox submissions and full 90+ VirusTotal vendor analysis:"
+            text: "Optional API Keys for real-time live VirusTotal multi-engine scans and urlscan.io sandboxes:"
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -651,11 +733,24 @@ Panel {
             }
           }
 
+          // VirusTotal Field
           Column {
             width: parent.width
-            spacing: Style.space(4)
+            spacing: Style.space(3)
 
-            Text { text: "VirusTotal API Key (Free)"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+            Row {
+              width: parent.width
+              Text { text: "VirusTotal API Key (Free)"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+              Item { Layout.fillWidth: true; height: 1 }
+              Text {
+                text: "Get Free Key ↗"
+                color: Color.accent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.openBrowser("https://www.virustotal.com/gui/join-us") }
+              }
+            }
+
             BorderSurface {
               width: parent.width
               implicitHeight: Style.space(32)
@@ -677,11 +772,24 @@ Panel {
             }
           }
 
+          // urlscan.io Field
           Column {
             width: parent.width
-            spacing: Style.space(4)
+            spacing: Style.space(3)
 
-            Text { text: "urlscan.io API Key (Free)"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+            Row {
+              width: parent.width
+              Text { text: "urlscan.io API Key (Free)"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+              Item { Layout.fillWidth: true; height: 1 }
+              Text {
+                text: "Get Free Key ↗"
+                color: Color.accent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.openBrowser("https://urlscan.io/user/signup") }
+              }
+            }
+
             BorderSurface {
               width: parent.width
               implicitHeight: Style.space(32)
@@ -730,7 +838,7 @@ Panel {
         // ------------------ FOOTER ------------------
         Text {
           width: parent.width
-          text: "Tip: Middle-click the bar icon to instantly scan copied URLs."
+          text: "Tip: Middle-click the bar icon to instantly scan copied URLs or hashes."
           color: Qt.darker(root.dim, 1.3)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption

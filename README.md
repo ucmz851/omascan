@@ -1,8 +1,8 @@
 # OmaScan (`ucmz851.omascan`)
 
-**OmaScan** is a fast, native URL safety & threat intelligence scanner designed for the Omarchy Quattro desktop environment (`omarchy-shell` / Quickshell).
+**OmaScan** is a fast, native threat intelligence scanner designed for the Omarchy Quattro desktop environment (`omarchy-shell` / Quickshell).
 
-Powered by **[urlscan.io](https://urlscan.io/)** and **[VirusTotal](https://www.virustotal.com/)**, OmaScan lets you safely inspect suspicious links, phishing websites, and unknown domains directly from your top bar without having to visit them in your browser.
+Powered by **[VirusTotal](https://www.virustotal.com/)** and **[urlscan.io](https://urlscan.io/)**, OmaScan lets you instantly inspect suspicious URLs, unknown domains, IP addresses, and file hashes directly from your top bar without having to visit dangerous websites or execute unverified files.
 
 ---
 
@@ -16,26 +16,52 @@ omarchy plugin add https://github.com/ucmz851/omascan.git --enable
 
 ---
 
-## Features
+## Supported Target Types
 
-- **Dual-Engine Threat Analysis:**
-  - **urlscan.io Sandbox:** Headless browser crawl, live page screenshot preview, server IP, country, ASN, web server technologies, and reputation score.
-  - **VirusTotal Multi-Engine AV:** Multi-vendor antivirus detection ratios (Google Safe Browsing, Kaspersky, BitDefender, Cloudflare, etc.).
-- **One-Click Clipboard Scan:** Click the paste icon or middle-click the bar icon to instantly paste and analyze any link copied from Discord, Telegram, Slack, or email (`wl-paste`).
-- **Safe Sandboxed Screenshots:** View what a website looks like before opening it.
-- **Zero-Friction Default Mode:** Works immediately out of the box using public search lookups without requiring API keys.
-- **Optional API Key Mode:** Add free VirusTotal and urlscan.io API keys in the **API Keys** tab for real-time live submissions.
-- **Scan History:** Keeps track of your last 10 scanned domains for instant review and rescanning.
+| Target Type | Example | What OmaScan Analyzes |
+| :--- | :--- | :--- |
+| **Web URLs** | `https://suspicious-login.com/auth` | Live sandbox crawl, screenshot, 90+ antivirus engines, phishing verdicts |
+| **Domains** | `malicious-domain.xyz` | Domain reputation, web server stack, IP address, country, SSL details |
+| **IP Addresses** | `185.220.101.5` | Geolocation, ASN / ISP, network owner, abuse detection, open ports |
+| **File Hashes (SHA-256)** | `275a021bbfb6489e54d471...` | Malware classification (Trojan, Ransomware), file name, size, vendor detections |
+| **File Hashes (MD5 / SHA-1)**| `d41d8cd98f00b204e980...` | Antivirus engine signatures and file reputation |
 
 ---
 
-## Bar Controls & Shortcuts
+## Features
+
+- **Multi-Engine Antivirus (VirusTotal):** Multi-vendor detection breakdowns across 90+ industry security vendors (Google Safe Browsing, Kaspersky, Microsoft Defender, BitDefender, Sophos, CrowdStrike, Cloudflare).
+- **Headless Sandbox Inspection (urlscan.io):** Visual screenshot preview of websites rendered inside a secure sandbox crawler—view pages safely without loading them on your PC.
+- **Auto-Detect Target Type:** Automatically determines whether your input is a URL, Domain, IP, MD5, SHA-1, or SHA-256.
+- **One-Click Clipboard Scan:** Middle-click the bar icon or click the paste icon to automatically analyze links or hashes from your clipboard (`wl-paste`).
+- **Zero-Friction Default Mode:** Works instantly out of the box using public threat intelligence and urlscan.io search without requiring any registration or API keys.
+- **Persistent Scan History:** Keeps track of your last 15 scanned targets for quick review and rescanning.
+
+---
+
+## How to Get Free API Keys (Optional)
+
+OmaScan works out of the box with public intelligence lookups. To unlock live on-demand sandbox submissions and full 90+ antivirus engine breakdowns, you can add free personal API keys in the **API Keys** tab:
+
+### 1. Free VirusTotal API Key (30 seconds)
+1. Go to **[virustotal.com/gui/join-us](https://www.virustotal.com/gui/join-us)** and create a free account.
+2. Click your profile avatar in the top-right corner and choose **API key**.
+3. Copy your API key, paste it into OmaScan's **API Keys** tab, and click **Save API Keys**.
+
+### 2. Free urlscan.io API Key (30 seconds)
+1. Go to **[urlscan.io/user/signup](https://urlscan.io/user/signup)** and register a free account.
+2. Navigate to **Settings** → **API Keys** and generate a new key.
+3. Paste it into OmaScan's **API Keys** tab and click **Save API Keys**.
+
+---
+
+## Controls & Shortcuts
 
 | Action | How to Trigger |
 | :--- | :--- |
-| **Open / Close Panel** | Left-click the globe/radar icon on your top bar |
+| **Open / Close Panel** | Left-click the globe icon (`󰖟`) on your top bar |
 | **Instant Clipboard Scan** | Middle-click the bar icon, or click the paste icon inside the panel |
-| **Scan URL** | Type/paste URL and press `Enter`, or click the search icon |
+| **Scan Target** | Type or paste input and press `Enter`, or click the search icon |
 | **Switch Tabs** | Click `Scan Results`, `History`, or `API Keys` |
 | **Dismiss Panel** | `Escape` |
 
@@ -46,12 +72,12 @@ omarchy plugin add https://github.com/ucmz851/omascan.git --enable
 ```
 omascan/
 ├── BarWidget.qml       # Bar widget icon, dynamic color tinting, and tooltip
-├── Panel.qml           # Anchored flyout panel with search bar, preview, and tabs
+├── Panel.qml           # Anchored flyout panel with multi-target cards and tabs
 ├── manifest.json       # Omarchy Quattro plugin manifest (namespaced id: ucmz851.omascan)
 ├── LICENSE             # MIT License
-├── README.md           # Documentation & instructions
+├── README.md           # Documentation, usage guide, and API instructions
 └── scripts/
-    └── scanner.py      # Python threat intelligence scanner for urlscan.io & VirusTotal
+    └── scanner.py      # Multi-target threat engine for VirusTotal & urlscan.io
 ```
 
 ---

@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """
-OmaScan Threat Intelligence Scanner
-Queries urlscan.io and VirusTotal to evaluate URL/Domain safety, reputation, and metadata.
-Outputs structured JSON for the Omarchy Quattro QML UI.
+OmaScan Advanced Threat Intelligence Scanner
+Unified multi-target scanner supporting:
+- File Hashes (MD5, SHA-1, SHA-256)
+- IP Addresses (IPv4, IPv6)
+- Domains (FQDN)
+- Full URLs
+
+Integrates VirusTotal v3 API and urlscan.io v1 API with zero-friction public fallbacks.
 """
 
 import sys
@@ -11,6 +16,7 @@ import re
 import json
 import time
 import socket
+import base64
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -34,15 +40,37 @@ def save_config(cfg):
     except Exception:
         pass
 
-def normalize_url(raw_input):
-    raw = raw_input.strip()
-    if not raw.startswith("http://") and not raw.startswith("https://"):
-        raw = "https://" + raw
-    parsed = urllib.parse.urlparse(raw)
-    domain = parsed.netloc.split(":")[0].lower()
-    return raw, domain
+def detect_target_type(raw_target):
+    t = raw_target.strip()
+    # Check Hashes
+    if re.match(r'^[a-fA-F0-9]{64}$', t):
+        return "hash_sha256", t.lower(), t.lower()
+    elif re.match(r'^[a-fA-F0-9]{40}$', t):
+        return "hash_sha1", t.lower(), t.lower()
+    elif re.match(r'^[a-fA-F0-9]{32}$', t):
+        return "hash_md5", t.lower(), t.lower()
 
-def query_urlscan(domain, url, api_key=None):
+    # Check IPv4
+    if re.match(r'^(\d{1,3}\.){3}\d{1,3}$', t):
+        return "ip", t, t
+
+    # Check IPv6
+    if ":" in t and not t.startswith("http") and re.match(r'^[0-9a-fA-F:]+$', t):
+        return "ip", t, t
+
+    # Check Full URL
+    if t.startswith("http://") or t.startswith("https://") or "/" in t:
+        if not t.startswith("http://") and not t.startswith("https://"):
+            t = "https://" + t
+        parsed = urllib.parse.urlparse(t)
+        domain = parsed.netloc.split(":")[0].lower()
+        return "url", t, domain
+
+    # Fallback to Domain
+    domain = t.split("/")[0].split(":")[0].lower()
+    return "domain", domain, domain
+
+def query_urlscan(target_type, target, domain):
     result = {
         "found": False,
         "screenshotUrl": None,
@@ -53,12 +81,22 @@ def query_urlscan(domain, url, api_key=None):
         "server": None,
         "verdict": None,
         "score": 0,
-        "resultUrl": f"https://urlscan.io/search/#domain:{domain}"
+        "resultUrl": None
     }
 
+    if target_type.startswith("hash"):
+        return result
+
     try:
-        search_url = f"https://urlscan.io/api/v1/search/?q=domain:{domain}&size=1"
-        req = urllib.request.Request(search_url, headers={"User-Agent": "OmaScan-Omarchy/1.0"})
+        if target_type == "ip":
+            query_str = f"ip:{target}"
+            result["resultUrl"] = f"https://urlscan.io/search/#ip:{target}"
+        else:
+            query_str = f"domain:{domain}"
+            result["resultUrl"] = f"https://urlscan.io/search/#domain:{domain}"
+
+        search_url = f"https://urlscan.io/api/v1/search/?q={urllib.parse.quote(query_str)}&size=1"
+        req = urllib.request.Request(search_url, headers={"User-Agent": "OmaScan-Omarchy/2.0"})
         with urllib.request.urlopen(req, timeout=4.0) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             if data.get("results") and len(data["results"]) > 0:
@@ -80,12 +118,12 @@ def query_urlscan(domain, url, api_key=None):
                 task_id = item.get("_id")
                 if task_id:
                     result["resultUrl"] = f"https://urlscan.io/result/{task_id}/"
-    except Exception as e:
+    except Exception:
         pass
 
     return result
 
-def query_virustotal(domain, api_key=None):
+def query_virustotal(target_type, target, domain, api_key=None):
     vt_result = {
         "hasKey": bool(api_key),
         "malicious": 0,
@@ -94,17 +132,38 @@ def query_virustotal(domain, api_key=None):
         "undetected": 0,
         "totalEngines": 0,
         "flaggedVendors": [],
-        "categories": {},
-        "reputation": 0
+        "threatLabel": None,
+        "fileDetails": None,
+        "reputation": 0,
+        "resultUrl": None
     }
+
+    # Set web link regardless of key
+    if target_type.startswith("hash"):
+        vt_result["resultUrl"] = f"https://www.virustotal.com/gui/file/{target}"
+    elif target_type == "ip":
+        vt_result["resultUrl"] = f"https://www.virustotal.com/gui/ip-address/{target}"
+    elif target_type == "domain":
+        vt_result["resultUrl"] = f"https://www.virustotal.com/gui/domain/{domain}"
+    else:
+        vt_result["resultUrl"] = f"https://www.virustotal.com/gui/domain/{domain}"
 
     if not api_key:
         return vt_result
 
     try:
-        vt_url = f"https://www.virustotal.com/api/v3/domains/{domain}"
-        req = urllib.request.Request(vt_url, headers={
-            "User-Agent": "OmaScan-Omarchy/1.0",
+        if target_type.startswith("hash"):
+            endpoint = f"https://www.virustotal.com/api/v3/files/{target}"
+        elif target_type == "ip":
+            endpoint = f"https://www.virustotal.com/api/v3/ip_addresses/{target}"
+        elif target_type == "domain":
+            endpoint = f"https://www.virustotal.com/api/v3/domains/{domain}"
+        else: # url
+            url_id = base64.urlsafe_b64encode(target.encode()).decode().strip("=")
+            endpoint = f"https://www.virustotal.com/api/v3/urls/{url_id}"
+
+        req = urllib.request.Request(endpoint, headers={
+            "User-Agent": "OmaScan-Omarchy/2.0",
             "x-apikey": api_key
         })
         with urllib.request.urlopen(req, timeout=4.5) as resp:
@@ -118,11 +177,23 @@ def query_virustotal(domain, api_key=None):
             vt_result["undetected"] = stats.get("undetected", 0)
             vt_result["totalEngines"] = sum(stats.values())
             vt_result["reputation"] = attrs.get("reputation", 0)
-            vt_result["categories"] = attrs.get("categories", {})
 
-            # Extract specific flagged engines
+            # Threat classification
+            threat_class = attrs.get("popular_threat_classification", {})
+            if threat_class.get("suggested_threat_label"):
+                vt_result["threatLabel"] = threat_class["suggested_threat_label"]
+
+            # File specifics if hash
+            if target_type.startswith("hash"):
+                vt_result["fileDetails"] = {
+                    "name": attrs.get("meaningful_name") or (attrs.get("names", ["Unknown"])[0] if attrs.get("names") else "Unknown"),
+                    "size": attrs.get("size", 0),
+                    "type": attrs.get("type_description", "Binary / File")
+                }
+
+            # Flagged security vendor list
             analysis_results = attrs.get("last_analysis_results", {})
-            for vendor, val in analysis_results.items():
+            for vendor, val in sorted(analysis_results.items()):
                 cat = val.get("category")
                 if cat in ["malicious", "suspicious"]:
                     vt_result["flaggedVendors"].append({
@@ -130,32 +201,38 @@ def query_virustotal(domain, api_key=None):
                         "category": cat,
                         "result": val.get("result") or cat
                     })
-    except Exception as e:
+    except Exception:
         pass
 
     return vt_result
 
-def resolve_dns_details(domain):
-    ip_list = []
+def resolve_dns(domain):
+    ips = []
     try:
-        _, _, ips = socket.gethostbyname_ex(domain)
-        ip_list = ips[:4]
+        _, _, ip_list = socket.gethostbyname_ex(domain)
+        ips = ip_list[:4]
     except Exception:
         pass
-    return ip_list
+    return ips
+
+def format_file_size(bytes_num):
+    if not bytes_num:
+        return "0 B"
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if bytes_num < 1024.0:
+            return f"{bytes_num:.1f} {unit}"
+        bytes_num /= 1024.0
+    return f"{bytes_num:.1f} TB"
 
 def main():
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "No URL provided", "verdict": "UNKNOWN"}))
+        print(json.dumps({"error": "No target provided", "verdict": "UNKNOWN"}))
         sys.exit(1)
 
-    # Handle command line or clipboard
     action = sys.argv[1]
-
     cfg = load_config()
 
     if action == "--set-keys":
-        # Argument format: --set-keys VT_KEY URLSCAN_KEY
         cfg["vt_api_key"] = sys.argv[2] if len(sys.argv) > 2 else ""
         cfg["urlscan_api_key"] = sys.argv[3] if len(sys.argv) > 3 else ""
         save_config(cfg)
@@ -170,52 +247,66 @@ def main():
         }))
         return
 
-    raw_input = action
-    full_url, domain = normalize_url(raw_input)
+    raw_input = action.strip()
+    target_type, target, domain = detect_target_type(raw_input)
 
     vt_key = cfg.get("vt_api_key")
     urlscan_key = cfg.get("urlscan_api_key")
 
-    # Query in sequence / parallel
-    urlscan_data = query_urlscan(domain, full_url, urlscan_key)
-    vt_data = query_virustotal(domain, vt_key)
-    dns_ips = resolve_dns_details(domain)
+    # Run lookups
+    urlscan_data = query_urlscan(target_type, target, domain)
+    vt_data = query_virustotal(target_type, target, domain, vt_key)
+    dns_ips = resolve_dns(domain) if target_type in ["domain", "url"] else ([target] if target_type == "ip" else [])
 
-    # Determine overall verdict
+    # Compute verdict
     is_malicious = False
     is_suspicious = False
-    verdict_text = "Safe / No Threats Detected"
-    verdict_color = "good"
     verdict = "CLEAN"
+    verdict_color = "good"
+    verdict_text = "Safe / No Known Threats Detected"
 
     if vt_data["malicious"] > 0 or urlscan_data.get("verdict") is True or urlscan_data.get("score", 0) > 60:
         is_malicious = True
         verdict = "MALICIOUS"
         verdict_color = "urgent"
-        verdict_text = f"Malicious Site Detected ({vt_data['malicious']} AV Engines Flagged)"
+        label = f" ({vt_data['threatLabel']})" if vt_data.get("threatLabel") else ""
+        verdict_text = f"Malicious Threat Detected{label} — {vt_data['malicious']} Antivirus Engines Flagged"
     elif vt_data["suspicious"] > 0 or (urlscan_data.get("score", 0) > 20 and urlscan_data.get("score", 0) <= 60):
         is_suspicious = True
         verdict = "SUSPICIOUS"
         verdict_color = "warning"
-        verdict_text = "Suspicious Domain / Caution Advised"
+        verdict_text = "Suspicious Target / Caution Advised"
 
     now_str = time.strftime("%H:%M:%S")
 
-    # Update history in config
+    # Friendly type name
+    type_labels = {
+        "hash_sha256": "File Hash (SHA-256)",
+        "hash_sha1": "File Hash (SHA-1)",
+        "hash_md5": "File Hash (MD5)",
+        "ip": "IP Address",
+        "domain": "Domain Name",
+        "url": "Web URL"
+    }
+
+    # Save to history
     history_entry = {
-        "url": full_url,
-        "domain": domain,
+        "target": target,
+        "targetType": type_labels.get(target_type, "Target"),
         "verdict": verdict,
         "verdictColor": verdict_color,
         "time": now_str
     }
-    history = [h for h in cfg.get("history", []) if h.get("domain") != domain]
+    history = [h for h in cfg.get("history", []) if h.get("target") != target]
     history.insert(0, history_entry)
-    cfg["history"] = history[:10]
+    cfg["history"] = history[:15]
     save_config(cfg)
 
     response = {
-        "targetUrl": full_url,
+        "rawInput": raw_input,
+        "target": target,
+        "targetType": target_type,
+        "targetTypeLabel": type_labels.get(target_type, "Target"),
         "domain": domain,
         "verdict": verdict,
         "verdictColor": verdict_color,
