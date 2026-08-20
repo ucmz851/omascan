@@ -6,6 +6,12 @@ Powered by **[VirusTotal](https://www.virustotal.com/)** and **[urlscan.io](http
 
 ---
 
+<p align="center">
+  <img src="preview.png" alt="OmaScan Preview" width="420" />
+</p>
+
+---
+
 ## Installation
 
 Install directly with the Omarchy plugin manager:
