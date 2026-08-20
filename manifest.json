@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "ucmz851.omascan",
+  "name": "OmaScan",
+  "version": "1.0.0",
+  "author": "ucmz851",
+  "license": "MIT",
+  "description": "URL & domain threat scanner integrating urlscan.io and VirusTotal for Omarchy Quattro.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "OmaScan",
+    "description": "Inspect suspicious links with live urlscan.io sandbox screenshots, VirusTotal AV engines, and domain reputation.",
+    "category": "Security",
+    "aliases": [
+      "urlscan",
+      "virustotal",
+      "link",
+      "phishing",
+      "scanner",
+      "threat",
+      "safety"
+    ],
+    "defaultSection": "right",
+    "allowMultiple": false
+  }
+}
