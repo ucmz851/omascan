@@ -90,7 +90,8 @@ def probe_ssl(domain):
                 if not_after:
                     ssl_info["expires"] = not_after
                     try:
-                        expire_dt = datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z")
+                        clean_str = re.sub(r'\s+', ' ', not_after.strip())
+                        expire_dt = datetime.strptime(clean_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
                         days_left = (expire_dt - datetime.now(timezone.utc)).days
                         ssl_info["daysRemaining"] = days_left
                     except Exception:

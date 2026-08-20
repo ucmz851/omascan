@@ -54,17 +54,6 @@ Panel {
     return dim
   }
 
-  function startScan(targetToScan) {
-    var targetStr = (targetToScan || inputUrl || "").trim()
-    if (!targetStr) return
-    inputUrl = targetStr
-    isScanning = true
-    activeTab = "scan"
-    scanProc.command = ["python3", Quickshell.env("HOME") + "/.config/omarchy/plugins/ucmz851.omascan/scripts/scanner.py", targetStr]
-    scanProc.running = true
-  }
-
-
   function clearScan() {
     root.inputUrl = ""
     root.target = ""
@@ -84,6 +73,18 @@ Panel {
       urlInputField.forceActiveFocus()
     }
   }
+
+  function startScan(targetToScan) {
+    var targetStr = (targetToScan || inputUrl || "").trim()
+    if (!targetStr) return
+    inputUrl = targetStr
+    if (urlInputField) urlInputField.text = targetStr
+    isScanning = true
+    activeTab = "scan"
+    scanProc.command = ["python3", Quickshell.env("HOME") + "/.config/omarchy/plugins/ucmz851.omascan/scripts/scanner.py", targetStr]
+    scanProc.running = true
+  }
+
   function scanClipboard() {
     pasteProc.running = true
   }
@@ -115,6 +116,10 @@ Panel {
       root.vt = data.vt || ({})
       root.urlscan = data.urlscan || ({})
       root.history = data.history || []
+      if (data.target && (!root.inputUrl || root.inputUrl === "")) {
+        root.inputUrl = data.target
+        if (urlInputField) urlInputField.text = data.target
+      }
     } catch (e) {
       console.log("omascan JSON parse error:", e)
     }
@@ -196,7 +201,7 @@ Panel {
     focusTarget: keyCatcher
 
     contentWidth: panel.fittedContentWidth(Style.space(440))
-    contentHeight: panel.fittedContentHeight(mainLayout.implicitHeight, Style.space(660))
+    contentHeight: panel.fittedContentHeight(mainLayout.implicitHeight, Style.space(680))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -311,7 +316,7 @@ Panel {
               }
 
               onAccepted: root.startScan(urlInputField.text)
-              onTextChanged: root.inputUrl = urlInputField.text
+              onTextEdited: root.inputUrl = urlInputField.text
             }
 
             Row {
@@ -401,7 +406,7 @@ Panel {
         Flickable {
           visible: root.activeTab === "scan"
           width: parent.width
-          height: Style.space(380)
+          height: Math.min(Style.space(440), resultsCol.implicitHeight)
           contentWidth: width
           contentHeight: resultsCol.implicitHeight
           clip: true
@@ -512,7 +517,99 @@ Panel {
               }
             }
 
-            // --- 3. SSL & ENCRYPTION HEALTH CARD ---
+            // --- 3. VIRUSTOTAL & THREAT DETECTION CARD (Expanded with All Flagged Engines) ---
+            BorderSurface {
+              width: parent.width
+              implicitHeight: vtCardCol.implicitHeight + Style.space(14)
+              radius: Style.cornerRadius
+              color: "transparent"
+              borderSpec: Border.controlSpec("normal", root.dim, Color.accent)
+
+              Column {
+                id: vtCardCol
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: Style.space(8)
+                spacing: Style.space(6)
+
+                Row {
+                  width: parent.width
+                  Text { text: "VirusTotal Multi-Engine Antivirus"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                  Item { Layout.fillWidth: true; height: 1 }
+                  PanelActionButton {
+                    iconText: ""
+                    tooltipText: "Open Report in Browser"
+                    foreground: Color.accent
+                    onClicked: root.openBrowser(root.vt.resultUrl || root.urlscan.resultUrl)
+                  }
+                }
+
+                Text {
+                  width: parent.width
+                  text: root.hasVtKey
+                    ? (root.vt.malicious > 0 ? "⚠️ Flagged by " + root.vt.malicious + " / " + root.vt.totalEngines + " Security Vendors" : "✅ 0 / " + (root.vt.totalEngines || "90+") + " Security Vendors Flagged (Clean)")
+                    : "Threat reputation verified safe across public feeds. (Add free VT API key in Keys tab for live 90+ engine breakdown)."
+                  color: root.vt.malicious > 0 ? root.urgent : (root.hasVtKey ? Color.accent : root.dim)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: root.hasVtKey
+                  wrapMode: Text.Wrap
+                }
+
+                // Complete grid of flagged vendor engines
+                Flow {
+                  width: parent.width
+                  spacing: Style.space(4)
+                  visible: root.vt && root.vt.flaggedVendors && root.vt.flaggedVendors.length > 0
+
+                  Repeater {
+                    model: (root.vt && root.vt.flaggedVendors) ? root.vt.flaggedVendors : []
+                    delegate: BorderSurface {
+                      implicitWidth: vendorText.implicitWidth + Style.space(8)
+                      implicitHeight: vendorText.implicitHeight + Style.space(3)
+                      radius: Style.cornerRadius
+                      color: Style.hoverFillFor(root.urgent, root.urgent)
+                      borderSpec: Border.controlSpec("normal", root.urgent, root.urgent)
+
+                      Text {
+                        id: vendorText
+                        anchors.centerIn: parent
+                        text: "• " + modelData.engine + ": " + modelData.result
+                        color: root.urgent
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.caption
+                        font.bold: true
+                      }
+                    }
+                  }
+                }
+
+                // File Details if Hash
+                Column {
+                  visible: root.vt.fileDetails !== null && root.vt.fileDetails !== undefined
+                  width: parent.width
+                  spacing: Style.space(2)
+
+                  Text {
+                    text: "File: " + ((root.vt.fileDetails && root.vt.fileDetails.name) || "Unknown")
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    text: "Type: " + ((root.vt.fileDetails && root.vt.fileDetails.type) || "Binary")
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+              }
+            }
+
+            // --- 4. SSL & ENCRYPTION HEALTH CARD ---
             BorderSurface {
               visible: root.ssl !== null && root.ssl.hasSsl === true
               width: parent.width
@@ -554,7 +651,7 @@ Panel {
               }
             }
 
-            // --- 4. HOST INFRASTRUCTURE & SERVER DETAILS ---
+            // --- 5. HOST INFRASTRUCTURE & SERVER DETAILS ---
             BorderSurface {
               visible: !root.targetType.startsWith("hash")
               width: parent.width
@@ -595,8 +692,8 @@ Panel {
 
                   Column {
                     spacing: Style.space(1)
-                    Text { text: "HTTP Status"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-                    Text { text: (root.http && root.http.status) ? root.http.status : (root.urlscan.server || "HTTP/TLS"); color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                    Text { text: "Web Server"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+                    Text { text: (root.http && root.http.server) ? root.http.server : (root.urlscan.server || "HTTP/TLS"); color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
                   }
                 }
 
@@ -608,82 +705,6 @@ Panel {
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                   elide: Text.ElideRight
-                }
-              }
-            }
-
-            // --- 5. VIRUSTOTAL & THREAT DETECTION CARD ---
-            BorderSurface {
-              width: parent.width
-              implicitHeight: vtCardCol.implicitHeight + Style.space(14)
-              radius: Style.cornerRadius
-              color: "transparent"
-              borderSpec: Border.controlSpec("normal", root.dim, Color.accent)
-
-              Column {
-                id: vtCardCol
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.margins: Style.space(8)
-                spacing: Style.space(4)
-
-                Row {
-                  width: parent.width
-                  Text { text: "VirusTotal & Threat Intelligence"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
-                  Item { Layout.fillWidth: true; height: 1 }
-                  PanelActionButton {
-                    iconText: ""
-                    tooltipText: "Open Report in Browser"
-                    foreground: Color.accent
-                    onClicked: root.openBrowser(root.vt.resultUrl || root.urlscan.resultUrl)
-                  }
-                }
-
-                Text {
-                  width: parent.width
-                  text: root.hasVtKey
-                    ? (root.vt.malicious > 0 ? "⚠️ " + root.vt.malicious + " / " + root.vt.totalEngines + " Antivirus Engines Flagged as Malicious" : "✅ 0 / " + (root.vt.totalEngines || "90+") + " Antivirus Engines Flagged (Clean)")
-                    : "Threat reputation verified safe across public feeds. (Add free VT API key in Keys tab for live 90+ engine breakdown)."
-                  color: root.vt.malicious > 0 ? root.urgent : root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  wrapMode: Text.Wrap
-                }
-
-                // Flagged engines (if any)
-                Repeater {
-                  model: (root.vt && root.vt.flaggedVendors) ? root.vt.flaggedVendors.slice(0, 4) : []
-                  delegate: Text {
-                    width: parent.width
-                    text: "• " + modelData.engine + ": " + modelData.result
-                    color: root.urgent
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
-                    font.bold: true
-                  }
-                }
-
-                // File Details if Hash
-                Column {
-                  visible: root.vt.fileDetails !== null && root.vt.fileDetails !== undefined
-                  width: parent.width
-                  spacing: Style.space(2)
-
-                  Text {
-                    text: "File: " + ((root.vt.fileDetails && root.vt.fileDetails.name) || "Unknown")
-                    color: root.foreground
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
-                    font.bold: true
-                    elide: Text.ElideRight
-                  }
-                  Text {
-                    text: "Type: " + ((root.vt.fileDetails && root.vt.fileDetails.type) || "Binary")
-                    color: root.dim
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
-                  }
                 }
               }
             }
