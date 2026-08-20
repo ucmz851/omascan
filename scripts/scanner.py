@@ -44,6 +44,10 @@ def save_config(cfg):
     try:
         CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
         CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+        try:
+            CONFIG_FILE.chmod(0o600)
+        except Exception:
+            pass
     except Exception:
         pass
 
