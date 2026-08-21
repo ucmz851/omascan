@@ -81,7 +81,7 @@ Panel {
     if (urlInputField) urlInputField.text = targetStr
     isScanning = true
     activeTab = "scan"
-    scanProc.command = ["python3", Quickshell.env("HOME") + "/.config/omarchy/plugins/ucmz851.omascan/scripts/scanner.py", targetStr]
+    scanProc.command = ["python3", Qt.resolvedUrl("scripts/scanner.py").toString().replace(/^file:\/\//, ""), targetStr]
     scanProc.running = true
   }
 
@@ -94,7 +94,7 @@ Panel {
   }
 
   function saveKeys() {
-    setKeysProc.command = ["python3", Quickshell.env("HOME") + "/.config/omarchy/plugins/ucmz851.omascan/scripts/scanner.py", "--set-keys", vtKeyInput.trim(), urlscanKeyInput.trim()]
+    setKeysProc.command = ["python3", Qt.resolvedUrl("scripts/scanner.py").toString().replace(/^file:\/\//, ""), "--set-keys", vtKeyInput.trim(), urlscanKeyInput.trim()]
     setKeysProc.running = true
   }
 
@@ -175,7 +175,7 @@ Panel {
 
   Process {
     id: loadConfigProc
-    command: ["python3", Quickshell.env("HOME") + "/.config/omarchy/plugins/ucmz851.omascan/scripts/scanner.py", "--get-config"]
+    command: ["python3", Qt.resolvedUrl("scripts/scanner.py").toString().replace(/^file:\/\//, ""), "--get-config"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.parseConfigOutput(text)
