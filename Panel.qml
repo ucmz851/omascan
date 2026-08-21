@@ -261,6 +261,7 @@ Panel {
 
                 Text {
                   id: typeText
+                  textFormat: Text.PlainText
                   anchors.centerIn: parent
                   text: root.targetTypeLabel
                   color: Color.accent
@@ -447,6 +448,7 @@ Panel {
                   spacing: Style.space(2)
 
                   Text {
+                    textFormat: Text.PlainText
                     text: root.verdict === "READY" ? "Ready to Scan" : (root.verdict + " · " + (root.lastScannedDomain || ""))
                     color: root.foreground
                     font.family: root.fontFamily
@@ -457,6 +459,7 @@ Panel {
                   }
 
                   Text {
+                    textFormat: Text.PlainText
                     text: root.verdictText
                     color: root.dim
                     font.family: root.fontFamily
@@ -490,6 +493,7 @@ Panel {
                   Text { text: "Live Sandbox Web Preview"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
                   Item { Layout.fillWidth: true; height: 1 }
                   Text {
+                    textFormat: Text.PlainText
                     text: root.urlscan.title ? ("Title: " + root.urlscan.title) : ""
                     color: root.dim
                     font.family: root.fontFamily
@@ -592,6 +596,7 @@ Panel {
                   spacing: Style.space(2)
 
                   Text {
+                    textFormat: Text.PlainText
                     text: "File: " + ((root.vt.fileDetails && root.vt.fileDetails.name) || "Unknown")
                     color: root.foreground
                     font.family: root.fontFamily
@@ -600,6 +605,7 @@ Panel {
                     elide: Text.ElideRight
                   }
                   Text {
+                    textFormat: Text.PlainText
                     text: "Type: " + ((root.vt.fileDetails && root.vt.fileDetails.type) || "Binary")
                     color: root.dim
                     font.family: root.fontFamily
@@ -754,6 +760,7 @@ Panel {
                   spacing: Style.space(2)
 
                   Text {
+                    textFormat: Text.PlainText
                     text: modelData.target || ""
                     color: root.foreground
                     font.family: root.fontFamily
@@ -764,6 +771,7 @@ Panel {
                   }
 
                   Text {
+                    textFormat: Text.PlainText
                     text: (modelData.targetType || "Target") + " · " + (modelData.verdict || "CLEAN") + " · " + (modelData.time || "")
                     color: root.dim
                     font.family: root.fontFamily
@@ -808,6 +816,7 @@ Panel {
 
             Text {
               id: noticeText
+              textFormat: Text.PlainText
               anchors.centerIn: parent
               text: root.keySavedNotice
               color: Color.accent

@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
 OmaScan Threat Intelligence Engine
-Provides safe, cloud-sandboxed threat intelligence for:
+Provides 100% cloud-sandboxed threat intelligence for:
 - File Hashes (MD5, SHA-1, SHA-256)
 - Public IP Addresses (IPv4, IPv6)
 - Domain Names & FQDNs
 - Web URLs
 
-Integrates:
-1. VirusTotal v3 API (90+ security engines)
-2. urlscan.io v1 API (cloud browser sandbox & visual previews)
-3. Strict public destination validation (disallows private/local network scanning)
-4. Accurate verdict reporting (marks unavailable/unverified targets as UNVERIFIED instead of CLEAN)
+Zero Host-Side Scraping / Zero SSRF:
+- All target inspections (screenshots, TLS certificates, web servers, HTTP status)
+  are performed exclusively via cloud sandboxes (urlscan.io & VirusTotal).
+- No direct socket connections or HTTP requests are made from the local host
+  to user-supplied targets, completely preventing DNS rebinding and SSRF.
+- Private/local network targets (RFC1918, RFC4193, loopback, localhost) are
+  isolated upfront and safely skipped.
 """
 
 import sys
@@ -19,14 +21,10 @@ import os
 import re
 import json
 import time
-import socket
-import ssl
-import base64
 import ipaddress
 import urllib.request
 import urllib.parse
 import urllib.error
-from datetime import datetime, timezone
 from pathlib import Path
 
 HOME = Path.home()
@@ -51,24 +49,22 @@ def save_config(cfg):
     except Exception:
         pass
 
-def is_private_or_local(host_or_ip):
-    # Check if raw string is an IP address
+def is_private_or_local_target(host_or_ip):
+    raw = host_or_ip.strip().lower()
+    # Check if raw string is an IP address (IPv4 or IPv6)
     try:
-        ip = ipaddress.ip_address(host_or_ip)
+        ip = ipaddress.ip_address(raw)
         return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified
     except ValueError:
         pass
 
-    if host_or_ip.lower() in ["localhost", "broadcasthost", "local", "ip6-localhost", "ip6-loopback"]:
+    # Check common local / internal hostnames
+    if raw in ["localhost", "broadcasthost", "local", "ip6-localhost", "ip6-loopback", "0.0.0.0", "::1"]:
+        return True
+    if raw.endswith(".local") or raw.endswith(".localhost") or raw.endswith(".internal") or raw.endswith(".lan") or raw.endswith(".home.arpa"):
         return True
 
-    # Check DNS resolution
-    try:
-        addr = socket.gethostbyname(host_or_ip)
-        ip = ipaddress.ip_address(addr)
-        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified
-    except Exception:
-        return False
+    return False
 
 def detect_target_type(raw_target):
     t = raw_target.strip()
@@ -92,42 +88,7 @@ def detect_target_type(raw_target):
         domain = t.split("/")[0].split(":")[0].lower()
         return "domain", domain, domain
 
-def probe_ssl(domain):
-    ssl_info = {
-        "hasSsl": False,
-        "issuer": None,
-        "expires": None,
-        "daysRemaining": None
-    }
-    if is_private_or_local(domain):
-        return ssl_info
-
-    try:
-        # Strict default TLS verification using system trust store
-        ctx = ssl.create_default_context()
-        with ctx.wrap_socket(socket.socket(), server_hostname=domain) as s:
-            s.settimeout(3.0)
-            s.connect((domain, 443))
-            cert = s.getpeercert()
-            if cert:
-                ssl_info["hasSsl"] = True
-                issuer_dict = dict(x[0] for x in cert.get('issuer', []))
-                ssl_info["issuer"] = issuer_dict.get('organizationName') or issuer_dict.get('commonName') or "Valid TLS Certificate"
-                not_after = cert.get('notAfter')
-                if not_after:
-                    ssl_info["expires"] = not_after
-                    try:
-                        clean_str = re.sub(r'\s+', ' ', not_after.strip())
-                        expire_dt = datetime.strptime(clean_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
-                        days_left = (expire_dt - datetime.now(timezone.utc)).days
-                        ssl_info["daysRemaining"] = days_left
-                    except Exception:
-                        pass
-    except Exception:
-        pass
-    return ssl_info
-
-def query_urlscan(target_type, target, domain):
+def query_urlscan_sandbox(target_type, target, domain):
     result = {
         "found": False,
         "screenshotUrl": None,
@@ -137,12 +98,14 @@ def query_urlscan(target_type, target, domain):
         "asn": None,
         "server": None,
         "status": None,
+        "tlsIssuer": None,
+        "tlsValidDays": None,
         "verdict": None,
         "score": 0,
         "resultUrl": None
     }
 
-    if target_type.startswith("hash") or is_private_or_local(domain):
+    if target_type.startswith("hash") or is_private_or_local_target(domain):
         return result
 
     try:
@@ -168,6 +131,8 @@ def query_urlscan(target_type, target, domain):
                 result["asn"] = page.get("asnname") or page.get("asn")
                 result["server"] = page.get("server")
                 result["status"] = page.get("status")
+                result["tlsIssuer"] = page.get("tlsIssuer")
+                result["tlsValidDays"] = page.get("tlsValidDays")
                 
                 verdicts = item.get("verdicts", {})
                 overall = verdicts.get("overall", {})
@@ -182,7 +147,7 @@ def query_urlscan(target_type, target, domain):
 
     return result
 
-def query_virustotal(target_type, target, domain, api_key=None):
+def query_virustotal_sandbox(target_type, target, domain, api_key=None):
     vt_result = {
         "hasKey": bool(api_key),
         "malicious": 0,
@@ -193,6 +158,8 @@ def query_virustotal(target_type, target, domain, api_key=None):
         "flaggedVendors": [],
         "threatLabel": None,
         "fileDetails": None,
+        "tlsIssuer": None,
+        "tlsValidDays": None,
         "reputation": 0,
         "resultUrl": None
     }
@@ -206,7 +173,7 @@ def query_virustotal(target_type, target, domain, api_key=None):
     else:
         vt_result["resultUrl"] = f"https://www.virustotal.com/gui/domain/{domain}"
 
-    if not api_key or is_private_or_local(domain if not target_type.startswith("hash") else "8.8.8.8"):
+    if not api_key or is_private_or_local_target(domain if not target_type.startswith("hash") else "8.8.8.8"):
         return vt_result
 
     try:
@@ -217,6 +184,7 @@ def query_virustotal(target_type, target, domain, api_key=None):
         elif target_type == "domain":
             endpoint = f"https://www.virustotal.com/api/v3/domains/{domain}"
         else: # url
+            import base64
             url_id = base64.urlsafe_b64encode(target.encode()).decode().strip("=")
             endpoint = f"https://www.virustotal.com/api/v3/urls/{url_id}"
 
@@ -240,6 +208,12 @@ def query_virustotal(target_type, target, domain, api_key=None):
             if threat_class.get("suggested_threat_label"):
                 vt_result["threatLabel"] = threat_class["suggested_threat_label"]
 
+            # TLS certificate from VT attributes if available
+            cert = attrs.get("last_https_certificate", {})
+            if cert:
+                issuer = cert.get("issuer", {})
+                vt_result["tlsIssuer"] = issuer.get("O") or issuer.get("CN") or "Valid TLS Certificate"
+
             if target_type.startswith("hash"):
                 vt_result["fileDetails"] = {
                     "name": attrs.get("meaningful_name") or (attrs.get("names", ["Unknown"])[0] if attrs.get("names") else "Unknown"),
@@ -260,17 +234,6 @@ def query_virustotal(target_type, target, domain, api_key=None):
         pass
 
     return vt_result
-
-def resolve_dns_ips(domain):
-    if is_private_or_local(domain):
-        return []
-    ips = []
-    try:
-        _, _, ip_list = socket.gethostbyname_ex(domain)
-        ips = ip_list[:4]
-    except Exception:
-        pass
-    return ips
 
 def main():
     if len(sys.argv) < 2:
@@ -310,8 +273,8 @@ def main():
         "url": "Web URL"
     }
 
-    # Check for private / local destinations
-    if target_type not in ["hash_sha256", "hash_sha1", "hash_md5"] and is_private_or_local(domain):
+    # Intercept private/local targets upfront without making any outbound connection
+    if target_type not in ["hash_sha256", "hash_sha1", "hash_md5"] and is_private_or_local_target(domain):
         now_str = time.strftime("%H:%M:%S")
         response = {
             "rawInput": raw_input,
@@ -322,7 +285,7 @@ def main():
             "verdict": "LOCAL",
             "verdictColor": "normal",
             "verdictText": "Private / Local Destination — Cloud reputation lookup skipped for safety.",
-            "dnsIps": ["127.0.0.1" if domain == "localhost" else target],
+            "dnsIps": [target],
             "ssl": {"hasSsl": False, "issuer": None, "expires": None, "daysRemaining": None},
             "http": {"status": "Local Network", "server": "Localhost", "hsts": False, "redirectTarget": None},
             "vt": {"hasKey": bool(vt_key), "malicious": 0, "suspicious": 0, "harmless": 0, "undetected": 0, "totalEngines": 0, "flaggedVendors": [], "threatLabel": None, "fileDetails": None, "reputation": 0, "resultUrl": None},
@@ -333,24 +296,36 @@ def main():
         print(json.dumps(response, indent=2))
         return
 
-    # Multi-engine lookups
-    urlscan_data = query_urlscan(target_type, target, domain)
-    vt_data = query_virustotal(target_type, target, domain, vt_key)
-    dns_ips = resolve_dns_ips(domain) if target_type in ["domain", "url"] else ([target] if target_type == "ip" else [])
-    ssl_data = probe_ssl(domain) if target_type in ["domain", "url"] else None
+    # Query cloud sandboxes exclusively (no host-side TCP or HTTP probing)
+    urlscan_data = query_urlscan_sandbox(target_type, target, domain)
+    vt_data = query_virustotal_sandbox(target_type, target, domain, vt_key)
+
+    # Cloud-extracted SSL metadata
+    tls_issuer = urlscan_data.get("tlsIssuer") or vt_data.get("tlsIssuer")
+    tls_days = urlscan_data.get("tlsValidDays") or vt_data.get("tlsValidDays")
+    ssl_data = {
+        "hasSsl": bool(tls_issuer),
+        "issuer": tls_issuer,
+        "expires": f"{tls_days} days valid" if tls_days else None,
+        "daysRemaining": tls_days
+    } if target_type in ["domain", "url"] else None
+
+    # Cloud-extracted HTTP metadata
     http_data = {
-        "status": f"{urlscan_data['status']} (via urlscan.io sandbox)" if urlscan_data.get("status") else None,
+        "status": f"{urlscan_data['status']} (via urlscan.io cloud sandbox)" if urlscan_data.get("status") else None,
         "server": urlscan_data.get("server"),
-        "hsts": ssl_data.get("hasSsl") if ssl_data else False,
+        "hsts": bool(tls_issuer),
         "redirectTarget": None
     } if target_type in ["domain", "url"] else None
+
+    resolved_ips = [urlscan_data["ip"]] if urlscan_data.get("ip") else ([target] if target_type == "ip" else [])
 
     # Compute verdict with strict accuracy
     is_malicious = False
     is_suspicious = False
     verdict = "UNVERIFIED"
     verdict_color = "normal"
-    verdict_text = "No Threat Intelligence Found (Inconclusive)"
+    verdict_text = "No Public Threat Intelligence Found (Inconclusive)"
 
     if vt_data["malicious"] > 0 or urlscan_data.get("verdict") is True or urlscan_data.get("score", 0) > 60:
         is_malicious = True
@@ -371,9 +346,8 @@ def main():
     elif urlscan_data["found"] is True:
         verdict = "CLEAN"
         verdict_color = "good"
-        verdict_text = "Safe / Clean (Verified by urlscan.io sandbox crawl)"
+        verdict_text = "Safe / Clean (Verified by urlscan.io cloud crawl)"
     else:
-        # When no threat lookup succeeded or no scan record exists
         verdict = "UNVERIFIED"
         verdict_color = "normal"
         verdict_text = "No Public Intelligence Found (Inconclusive — Add free VirusTotal key for on-demand 90+ engine analysis)"
@@ -401,7 +375,7 @@ def main():
         "verdict": verdict,
         "verdictColor": verdict_color,
         "verdictText": verdict_text,
-        "dnsIps": dns_ips,
+        "dnsIps": resolved_ips,
         "ssl": ssl_data,
         "http": http_data,
         "vt": vt_data,
