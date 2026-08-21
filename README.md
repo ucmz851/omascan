@@ -12,12 +12,20 @@ Powered by **[VirusTotal](https://www.virustotal.com/)** and **[urlscan.io](http
 
 ---
 
-## Installation
+## Installation & Removal
 
+### Installation
 Install directly with the Omarchy plugin manager:
 
 ```bash
 omarchy plugin add https://github.com/ucmz851/omascan.git --enable
+```
+
+### Removal
+To disable and remove the plugin from your system:
+
+```bash
+omarchy plugin remove ucmz851.omascan
 ```
 
 ---
@@ -42,7 +50,7 @@ OmaScan is designed to be **100% useful out of the box with zero setup**, but al
 | :--- | :--- | :--- |
 | **Cost** | 100% Free | 100% Free |
 | **Setup Required** | None (Works immediately) | 60 seconds (Paste free key once) |
-| **Live Sandboxed Screenshots** | ✅ Yes (from urlscan.io cache/search) | ✅ Yes + on-demand live browser crawls |
+| **Live Sandboxed Screenshots** | ✅ Yes (from urlscan.io cloud search) | ✅ Yes + on-demand live browser crawls |
 | **TLS/SSL Health & Expiration** | ✅ Yes (Live probe with days remaining) | ✅ Yes (Live probe with days remaining) |
 | **Server IP & Network ASN** | ✅ Yes (Live DNS & IP resolution) | ✅ Yes (Live DNS & IP resolution) |
 | **Antivirus Vendor Breakdown** | Basic public threat reputation | **Full breakdown across 90+ Antivirus Engines** (Google SafeBrowsing, Kaspersky, Microsoft Defender, BitDefender, Sophos, CrowdStrike) |
@@ -68,6 +76,8 @@ Both VirusTotal and urlscan.io provide **100% free personal API keys**:
 
 ## Privacy & Security
 
+- **Safe Cloud Sandboxing:** OmaScan queries safe cloud threat endpoints without performing unsafe direct host scraping of unverified destinations.
+- **Local Network Isolation:** Private and local IP destinations (`127.0.0.1`, `localhost`, `192.168.0.0/16`, etc.) are recognized and safely isolated from external threat lookup queries.
 - **100% Local Storage:** Your API keys and search history are stored exclusively on your local machine at `~/.config/omarchy/omascan.json`.
 - **Locked File Permissions (`chmod 600`):** OmaScan strictly restricts configuration file permissions (`-rw-------`) so no other unprivileged process or user on your system can read your keys.
 - **No Telemetry:** OmaScan does not track users, log searches externally, or include analytics.
@@ -96,6 +106,8 @@ omascan/
 ├── manifest.json       # Omarchy Quattro plugin manifest (namespaced id: ucmz851.omascan)
 ├── LICENSE             # MIT License
 ├── README.md           # Documentation, usage guide, and API instructions
+├── preview.png         # Marketplace preview thumbnail
+├── screenshots/        # Additional UI screenshots
 └── scripts/
     └── scanner.py      # Multi-target threat engine for VirusTotal & urlscan.io
 ```

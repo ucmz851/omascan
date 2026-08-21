@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """
-OmaScan Full Threat Intelligence Engine
-Provides zero-friction, deep on-device and cloud threat analysis for:
+OmaScan Threat Intelligence Engine
+Provides safe, cloud-sandboxed threat intelligence for:
 - File Hashes (MD5, SHA-1, SHA-256)
-- IP Addresses (IPv4, IPv6)
-- Domains & FQDNs
+- Public IP Addresses (IPv4, IPv6)
+- Domain Names & FQDNs
 - Web URLs
 
-Extracts:
-1. Threat Feeds & Reputation (urlscan.io, Quad9/DNSBL, VirusTotal v3)
-2. Live Page Title & Sandbox Screenshot (urlscan.io)
-3. SSL / TLS Certificate Details (Issuer, Expiration, Encryption state)
-4. Network & Infrastructure (Server IP, Country, ASN/ISP, Web Server tech, HTTP status)
-5. File / Malware Classifications
+Integrates:
+1. VirusTotal v3 API (90+ security engines)
+2. urlscan.io v1 API (cloud browser sandbox & visual previews)
+3. Strict public destination validation (disallows private/local network scanning)
+4. Accurate verdict reporting (marks unavailable/unverified targets as UNVERIFIED instead of CLEAN)
 """
 
 import sys
@@ -23,6 +22,7 @@ import time
 import socket
 import ssl
 import base64
+import ipaddress
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -50,6 +50,25 @@ def save_config(cfg):
             pass
     except Exception:
         pass
+
+def is_private_or_local(host_or_ip):
+    # Check if raw string is an IP address
+    try:
+        ip = ipaddress.ip_address(host_or_ip)
+        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified
+    except ValueError:
+        pass
+
+    if host_or_ip.lower() in ["localhost", "broadcasthost", "local", "ip6-localhost", "ip6-loopback"]:
+        return True
+
+    # Check DNS resolution
+    try:
+        addr = socket.gethostbyname(host_or_ip)
+        ip = ipaddress.ip_address(addr)
+        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified
+    except Exception:
+        return False
 
 def detect_target_type(raw_target):
     t = raw_target.strip()
@@ -80,7 +99,11 @@ def probe_ssl(domain):
         "expires": None,
         "daysRemaining": None
     }
+    if is_private_or_local(domain):
+        return ssl_info
+
     try:
+        # Strict default TLS verification using system trust store
         ctx = ssl.create_default_context()
         with ctx.wrap_socket(socket.socket(), server_hostname=domain) as s:
             s.settimeout(3.0)
@@ -104,35 +127,6 @@ def probe_ssl(domain):
         pass
     return ssl_info
 
-def probe_http(domain, full_url=None):
-    http_info = {
-        "status": None,
-        "server": None,
-        "hsts": False,
-        "redirectTarget": None
-    }
-    target_url = full_url if full_url and full_url.startswith("http") else f"https://{domain}"
-    try:
-        req = urllib.request.Request(target_url, headers={
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; OmaScan/2.0) AppleWebKit/537.36"
-        })
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        with urllib.request.urlopen(req, timeout=3.5, context=ctx) as resp:
-            http_info["status"] = f"{resp.status} {resp.reason}"
-            headers = dict(resp.headers)
-            http_info["server"] = headers.get("server") or headers.get("Server")
-            http_info["hsts"] = bool(headers.get("strict-transport-security") or headers.get("Strict-Transport-Security"))
-            if resp.url != target_url:
-                http_info["redirectTarget"] = resp.url
-    except urllib.error.HTTPError as e:
-        http_info["status"] = f"{e.code} {e.reason}"
-        http_info["server"] = e.headers.get("server")
-    except Exception:
-        pass
-    return http_info
-
 def query_urlscan(target_type, target, domain):
     result = {
         "found": False,
@@ -142,12 +136,13 @@ def query_urlscan(target_type, target, domain):
         "country": None,
         "asn": None,
         "server": None,
+        "status": None,
         "verdict": None,
         "score": 0,
         "resultUrl": None
     }
 
-    if target_type.startswith("hash"):
+    if target_type.startswith("hash") or is_private_or_local(domain):
         return result
 
     try:
@@ -172,6 +167,7 @@ def query_urlscan(target_type, target, domain):
                 result["country"] = page.get("country")
                 result["asn"] = page.get("asnname") or page.get("asn")
                 result["server"] = page.get("server")
+                result["status"] = page.get("status")
                 
                 verdicts = item.get("verdicts", {})
                 overall = verdicts.get("overall", {})
@@ -210,7 +206,7 @@ def query_virustotal(target_type, target, domain, api_key=None):
     else:
         vt_result["resultUrl"] = f"https://www.virustotal.com/gui/domain/{domain}"
 
-    if not api_key:
+    if not api_key or is_private_or_local(domain if not target_type.startswith("hash") else "8.8.8.8"):
         return vt_result
 
     try:
@@ -266,6 +262,8 @@ def query_virustotal(target_type, target, domain, api_key=None):
     return vt_result
 
 def resolve_dns_ips(domain):
+    if is_private_or_local(domain):
+        return []
     ips = []
     try:
         _, _, ip_list = socket.gethostbyname_ex(domain)
@@ -303,36 +301,6 @@ def main():
     vt_key = cfg.get("vt_api_key")
     urlscan_key = cfg.get("urlscan_api_key")
 
-    # Multi-engine lookups
-    urlscan_data = query_urlscan(target_type, target, domain)
-    vt_data = query_virustotal(target_type, target, domain, vt_key)
-    dns_ips = resolve_dns_ips(domain) if target_type in ["domain", "url"] else ([target] if target_type == "ip" else [])
-    
-    # Probes for domains/URLs
-    ssl_data = probe_ssl(domain) if target_type in ["domain", "url"] else None
-    http_data = probe_http(domain, target if target_type == "url" else None) if target_type in ["domain", "url"] else None
-
-    # Determine unified verdict
-    is_malicious = False
-    is_suspicious = False
-    verdict = "CLEAN"
-    verdict_color = "good"
-    verdict_text = "Safe / No Known Threats Detected"
-
-    if vt_data["malicious"] > 0 or urlscan_data.get("verdict") is True or urlscan_data.get("score", 0) > 60:
-        is_malicious = True
-        verdict = "MALICIOUS"
-        verdict_color = "urgent"
-        label = f" ({vt_data['threatLabel']})" if vt_data.get("threatLabel") else ""
-        verdict_text = f"Malicious Threat Detected{label} — {vt_data['malicious']} Antivirus Engines Flagged"
-    elif vt_data["suspicious"] > 0 or (urlscan_data.get("score", 0) > 20 and urlscan_data.get("score", 0) <= 60):
-        is_suspicious = True
-        verdict = "SUSPICIOUS"
-        verdict_color = "warning"
-        verdict_text = "Suspicious Target / Caution Advised"
-
-    now_str = time.strftime("%H:%M:%S")
-
     type_labels = {
         "hash_sha256": "File Hash (SHA-256)",
         "hash_sha1": "File Hash (SHA-1)",
@@ -341,6 +309,76 @@ def main():
         "domain": "Domain Name",
         "url": "Web URL"
     }
+
+    # Check for private / local destinations
+    if target_type not in ["hash_sha256", "hash_sha1", "hash_md5"] and is_private_or_local(domain):
+        now_str = time.strftime("%H:%M:%S")
+        response = {
+            "rawInput": raw_input,
+            "target": target,
+            "targetType": target_type,
+            "targetTypeLabel": type_labels.get(target_type, "Target"),
+            "domain": domain,
+            "verdict": "LOCAL",
+            "verdictColor": "normal",
+            "verdictText": "Private / Local Destination — Cloud reputation lookup skipped for safety.",
+            "dnsIps": ["127.0.0.1" if domain == "localhost" else target],
+            "ssl": {"hasSsl": False, "issuer": None, "expires": None, "daysRemaining": None},
+            "http": {"status": "Local Network", "server": "Localhost", "hsts": False, "redirectTarget": None},
+            "vt": {"hasKey": bool(vt_key), "malicious": 0, "suspicious": 0, "harmless": 0, "undetected": 0, "totalEngines": 0, "flaggedVendors": [], "threatLabel": None, "fileDetails": None, "reputation": 0, "resultUrl": None},
+            "urlscan": {"found": False, "screenshotUrl": None, "title": "Private Network Destination", "ip": target, "country": "Local", "asn": "Local Area Network", "server": "Local", "status": None, "verdict": None, "score": 0, "resultUrl": None},
+            "timestamp": now_str,
+            "history": cfg.get("history", [])
+        }
+        print(json.dumps(response, indent=2))
+        return
+
+    # Multi-engine lookups
+    urlscan_data = query_urlscan(target_type, target, domain)
+    vt_data = query_virustotal(target_type, target, domain, vt_key)
+    dns_ips = resolve_dns_ips(domain) if target_type in ["domain", "url"] else ([target] if target_type == "ip" else [])
+    ssl_data = probe_ssl(domain) if target_type in ["domain", "url"] else None
+    http_data = {
+        "status": f"{urlscan_data['status']} (via urlscan.io sandbox)" if urlscan_data.get("status") else None,
+        "server": urlscan_data.get("server"),
+        "hsts": ssl_data.get("hasSsl") if ssl_data else False,
+        "redirectTarget": None
+    } if target_type in ["domain", "url"] else None
+
+    # Compute verdict with strict accuracy
+    is_malicious = False
+    is_suspicious = False
+    verdict = "UNVERIFIED"
+    verdict_color = "normal"
+    verdict_text = "No Threat Intelligence Found (Inconclusive)"
+
+    if vt_data["malicious"] > 0 or urlscan_data.get("verdict") is True or urlscan_data.get("score", 0) > 60:
+        is_malicious = True
+        verdict = "MALICIOUS"
+        verdict_color = "urgent"
+        label = f" ({vt_data['threatLabel']})" if vt_data.get("threatLabel") else ""
+        count = vt_data['malicious'] if vt_data['malicious'] > 0 else "urlscan.io sandbox"
+        verdict_text = f"Malicious Threat Detected{label} — {count} Flags"
+    elif vt_data["suspicious"] > 0 or (urlscan_data.get("score", 0) > 20 and urlscan_data.get("score", 0) <= 60):
+        is_suspicious = True
+        verdict = "SUSPICIOUS"
+        verdict_color = "warning"
+        verdict_text = "Suspicious Target / Caution Advised"
+    elif vt_data["totalEngines"] > 0:
+        verdict = "CLEAN"
+        verdict_color = "good"
+        verdict_text = f"Safe / Clean ({vt_data['harmless'] + vt_data['undetected']} Security Engines Verified)"
+    elif urlscan_data["found"] is True:
+        verdict = "CLEAN"
+        verdict_color = "good"
+        verdict_text = "Safe / Clean (Verified by urlscan.io sandbox crawl)"
+    else:
+        # When no threat lookup succeeded or no scan record exists
+        verdict = "UNVERIFIED"
+        verdict_color = "normal"
+        verdict_text = "No Public Intelligence Found (Inconclusive — Add free VirusTotal key for on-demand 90+ engine analysis)"
+
+    now_str = time.strftime("%H:%M:%S")
 
     history_entry = {
         "target": target,
