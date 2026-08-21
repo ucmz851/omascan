@@ -223,6 +223,7 @@ Panel {
           implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight)
 
           Text {
+            textFormat: Text.PlainText
             id: heroIcon
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
@@ -243,6 +244,7 @@ Panel {
             Row {
               spacing: Style.space(8)
               Text {
+                textFormat: Text.PlainText
                 text: "OmaScan Intelligence"
                 color: root.foreground
                 font.family: root.fontFamily
@@ -273,6 +275,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               text: "urlscan.io Sandbox · SSL & HTTP Headers · VirusTotal"
               color: root.dim
               font.family: root.fontFamily
@@ -308,6 +311,7 @@ Panel {
               clip: true
 
               Text {
+                textFormat: Text.PlainText
                 text: "Paste URL, IP, or Hash (MD5/SHA-256)..."
                 color: root.dim
                 font.family: root.fontFamily
@@ -383,6 +387,7 @@ Panel {
                 : Border.controlSpec("normal", root.dim, Color.accent)
 
               Text {
+                textFormat: Text.PlainText
                 id: tabLabel
                 anchors.centerIn: parent
                 text: modelData.label
@@ -435,6 +440,7 @@ Panel {
                 spacing: Style.space(10)
 
                 Text {
+                  textFormat: Text.PlainText
                   text: root.verdict === "CLEAN" ? "" : (root.verdict === "MALICIOUS" ? "" : "")
                   color: root.getVerdictColor(root.verdictColor)
                   font.family: root.fontFamily
@@ -490,7 +496,7 @@ Panel {
 
                 Row {
                   width: parent.width
-                  Text { text: "Live Sandbox Web Preview"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                  Text { textFormat: Text.PlainText; text: "Live Sandbox Web Preview"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true  }
                   Item { Layout.fillWidth: true; height: 1 }
                   Text {
                     textFormat: Text.PlainText
@@ -539,7 +545,7 @@ Panel {
 
                 Row {
                   width: parent.width
-                  Text { text: "VirusTotal Multi-Engine Antivirus"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                  Text { textFormat: Text.PlainText; text: "VirusTotal Multi-Engine Antivirus"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true  }
                   Item { Layout.fillWidth: true; height: 1 }
                   PanelActionButton {
                     iconText: ""
@@ -550,6 +556,7 @@ Panel {
                 }
 
                 Text {
+                  textFormat: Text.PlainText
                   width: parent.width
                   text: root.hasVtKey
                     ? (root.vt.malicious > 0 ? "⚠️ Flagged by " + root.vt.malicious + " / " + root.vt.totalEngines + " Security Vendors" : "✅ 0 / " + (root.vt.totalEngines || "90+") + " Security Vendors Flagged (Clean)")
@@ -577,6 +584,7 @@ Panel {
                       borderSpec: Border.controlSpec("normal", root.urgent, root.urgent)
 
                       Text {
+                        textFormat: Text.PlainText
                         id: vendorText
                         anchors.centerIn: parent
                         text: "• " + modelData.engine + ": " + modelData.result
@@ -634,8 +642,8 @@ Panel {
 
                 Row {
                   spacing: Style.space(6)
-                  Text { text: ""; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
-                  Text { text: "TLS/SSL Certificate & Encryption"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                  Text { textFormat: Text.PlainText; text: ""; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true  }
+                  Text { textFormat: Text.PlainText; text: "TLS/SSL Certificate & Encryption"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true  }
                 }
 
                 Row {
@@ -644,14 +652,14 @@ Panel {
 
                   Column {
                     spacing: Style.space(1)
-                    Text { text: "Issuer"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-                    Text { text: root.ssl.issuer || "Valid CA"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true; elide: Text.ElideRight; width: Style.space(180) }
+                    Text { textFormat: Text.PlainText; text: "Issuer"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption  }
+                    Text { textFormat: Text.PlainText; text: root.ssl.issuer || "Valid CA"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true; elide: Text.ElideRight; width: Style.space(180)  }
                   }
 
                   Column {
                     spacing: Style.space(1)
-                    Text { text: "Validity Remaining"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-                    Text { text: root.ssl.daysRemaining !== null ? (root.ssl.daysRemaining + " days remaining") : (root.ssl.expires || "Active"); color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                    Text { textFormat: Text.PlainText; text: "Validity Remaining"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption  }
+                    Text { textFormat: Text.PlainText; text: root.ssl.daysRemaining !== null ? (root.ssl.daysRemaining + " days remaining") : (root.ssl.expires || "Active"); color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true  }
                   }
                 }
               }
@@ -676,8 +684,8 @@ Panel {
 
                 Row {
                   spacing: Style.space(6)
-                  Text { text: ""; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
-                  Text { text: "Server & Network Infrastructure"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                  Text { textFormat: Text.PlainText; text: ""; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true  }
+                  Text { textFormat: Text.PlainText; text: "Server & Network Infrastructure"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true  }
                 }
 
                 Row {
@@ -686,24 +694,25 @@ Panel {
 
                   Column {
                     spacing: Style.space(1)
-                    Text { text: "Resolved IP"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-                    Text { text: (root.dnsIps.length > 0 ? root.dnsIps[0] : (root.urlscan.ip || "—")); color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                    Text { textFormat: Text.PlainText; text: "Resolved IP"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption  }
+                    Text { textFormat: Text.PlainText; text: (root.dnsIps.length > 0 ? root.dnsIps[0] : (root.urlscan.ip || "—")); color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true  }
                   }
 
                   Column {
                     spacing: Style.space(1)
-                    Text { text: "Country"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-                    Text { text: root.urlscan.country || "Global"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                    Text { textFormat: Text.PlainText; text: "Country"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption  }
+                    Text { textFormat: Text.PlainText; text: root.urlscan.country || "Global"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true  }
                   }
 
                   Column {
                     spacing: Style.space(1)
-                    Text { text: "Web Server"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-                    Text { text: (root.http && root.http.server) ? root.http.server : (root.urlscan.server || "HTTP/TLS"); color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                    Text { textFormat: Text.PlainText; text: "Web Server"; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.caption  }
+                    Text { textFormat: Text.PlainText; text: (root.http && root.http.server) ? root.http.server : (root.urlscan.server || "HTTP/TLS"); color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true  }
                   }
                 }
 
                 Text {
+                  textFormat: Text.PlainText
                   width: parent.width
                   visible: root.urlscan.asn !== null && root.urlscan.asn !== undefined
                   text: "Network ASN: " + (root.urlscan.asn || "")
@@ -747,6 +756,7 @@ Panel {
                 spacing: Style.space(8)
 
                 Text {
+                  textFormat: Text.PlainText
                   text: modelData.verdict === "CLEAN" ? "" : ""
                   color: modelData.verdict === "CLEAN" ? Color.accent : root.urgent
                   font.family: root.fontFamily
@@ -798,6 +808,7 @@ Panel {
           spacing: Style.space(8)
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: "Optional API Keys for real-time live VirusTotal multi-engine scans and urlscan.io sandboxes:"
             color: root.dim
@@ -833,9 +844,10 @@ Panel {
 
             Row {
               width: parent.width
-              Text { text: "VirusTotal API Key (Free)"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+              Text { textFormat: Text.PlainText; text: "VirusTotal API Key (Free)"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true  }
               Item { Layout.fillWidth: true; height: 1 }
               Text {
+                textFormat: Text.PlainText
                 text: "Get Free Key ↗"
                 color: Color.accent
                 font.family: root.fontFamily
@@ -872,9 +884,10 @@ Panel {
 
             Row {
               width: parent.width
-              Text { text: "urlscan.io API Key (Free)"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+              Text { textFormat: Text.PlainText; text: "urlscan.io API Key (Free)"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true  }
               Item { Layout.fillWidth: true; height: 1 }
               Text {
+                textFormat: Text.PlainText
                 text: "Get Free Key ↗"
                 color: Color.accent
                 font.family: root.fontFamily
@@ -912,6 +925,7 @@ Panel {
             borderSpec: Border.controlSpec("selected", Color.accent, Color.accent)
 
             Text {
+              textFormat: Text.PlainText
               anchors.centerIn: parent
               text: "Save API Keys"
               color: root.foreground
@@ -930,6 +944,7 @@ Panel {
 
         // ------------------ FOOTER ------------------
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           text: "Tip: Middle-click the bar icon to instantly scan copied URLs or hashes."
           color: Qt.darker(root.dim, 1.3)
